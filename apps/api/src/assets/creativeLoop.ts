@@ -201,7 +201,7 @@ export async function generateImageFromPromptRecipe(
       ? undefined
       : {
           openai: settings.hasOpenaiApiKey,
-          "comfyui-cloud": settings.hasComfyuiCloudApiKey,
+          "comfyui-cloud": settings.comfyuiCloudReady,
           hermes: settings.hasHermesApiKey,
           wavespeed: settings.hasWavespeedApiKey,
           mock: settings.mockProviders

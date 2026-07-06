@@ -70,6 +70,8 @@ describe("api app", () => {
       openaiBaseUrl: "https://api.openai.com/v1",
       openaiImageModel: "gpt-image-1.5",
       openaiImageModeration: "low",
+      hasActiveComfyuiCloudWorkflow: false,
+      comfyuiCloudReady: false,
       hasOpenaiApiKey: false
     });
     expect(initial.json().settings.openaiApiKey).toBeUndefined();
@@ -140,6 +142,47 @@ describe("api app", () => {
     });
     expect(activated.statusCode).toBe(200);
     expect(activated.json().workflow.default_for_tiers).toContain("sfw_standard");
+    const providers = await app.inject({ method: "GET", url: "/api/settings/providers" });
+    expect(providers.json().settings).toMatchObject({
+      hasActiveComfyuiCloudWorkflow: true,
+      comfyuiCloudReady: false
+    });
+
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("blocks Comfy provider tests until an active workflow is configured", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vas-api-"));
+    const app = buildApp(testConfig(dir, { mockProviders: false, comfyuiCloudApiKey: "comfy-key" }));
+
+    const settingsResponse = await app.inject({
+      method: "PATCH",
+      url: "/api/settings/providers",
+      payload: {
+        mockProviders: false,
+        defaultImageGenerationProvider: "comfyui-cloud"
+      }
+    });
+    expect(settingsResponse.statusCode).toBe(200);
+    expect(settingsResponse.json().settings).toMatchObject({
+      hasComfyuiCloudApiKey: true,
+      hasActiveComfyuiCloudWorkflow: false,
+      comfyuiCloudReady: false
+    });
+
+    const providerTest = await app.inject({
+      method: "POST",
+      url: "/api/settings/providers/test",
+      payload: { capability: "image_generation" }
+    });
+    expect(providerTest.statusCode).toBe(200);
+    expect(providerTest.json()).toMatchObject({
+      ok: false,
+      setupRequired: true,
+      provider: "comfyui-cloud-image-generation"
+    });
+    expect(providerTest.json().runId).toBeUndefined();
 
     await app.close();
     rmSync(dir, { recursive: true, force: true });

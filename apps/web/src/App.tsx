@@ -183,6 +183,8 @@ interface ProviderSettings {
   wavespeedImageGenerationPath: string;
   hasHermesApiKey: boolean;
   hasComfyuiCloudApiKey: boolean;
+  hasActiveComfyuiCloudWorkflow: boolean;
+  comfyuiCloudReady: boolean;
   hasOpenaiApiKey: boolean;
   hasWavespeedApiKey: boolean;
 }
@@ -3530,13 +3532,13 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     setError(null);
     setMessage(null);
     try {
-      const result = await postJson<{ ok: boolean; runId: string; error?: string }>("/api/settings/providers/test", { capability });
+      const result = await postJson<{ ok: boolean; runId?: string; error?: string }>("/api/settings/providers/test", { capability });
       if (result.ok) {
         setMessage(`${capability.replace("_", " ")} provider test passed.`);
       } else {
         setError(result.error ?? "Provider test failed.");
       }
-      navigate(`/runs/${result.runId}`);
+      if (result.runId) navigate(`/runs/${result.runId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Provider test failed.");
     }
@@ -3686,10 +3688,12 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
   const defaultPlatformsText = automationSettings.defaultPlatforms.join(", ");
   const configuredProviderCount = [
     settings.hasHermesApiKey,
-    settings.hasComfyuiCloudApiKey,
+    settings.comfyuiCloudReady,
     settings.hasOpenaiApiKey,
     settings.hasWavespeedApiKey
   ].filter(Boolean).length;
+  const imageProviderNeedsComfyWorkflow =
+    !settings.mockProviders && settings.defaultImageGenerationProvider === "comfyui-cloud" && !settings.comfyuiCloudReady;
   const opsCards = [
     {
       label: "Provider mode",
@@ -3914,7 +3918,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
               <div className="settings-action-grid">
                 <button className="primary-action" type="button" onClick={save} disabled={!routingDirty}>{routingDirty ? "Save routing" : "Routing saved"}</button>
                 <button type="button" onClick={resetRouting} disabled={!routingDirty}>Reset</button>
-                <button type="button" onClick={() => testProvider("image_generation")} disabled={routingDirty}>Test image</button>
+                <button type="button" onClick={() => testProvider("image_generation")} disabled={routingDirty || imageProviderNeedsComfyWorkflow}>Test image</button>
                 <button type="button" onClick={() => testProvider("image_analysis")} disabled={routingDirty}>Test analysis</button>
               </div>
             </div>
@@ -3931,7 +3935,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
               </div>
             </details>
             <details className="provider-drawer">
-              <summary><span>ComfyUI Cloud</span><strong>{settings.hasComfyuiCloudApiKey ? "Key saved" : "No key"}</strong></summary>
+              <summary><span>ComfyUI Cloud</span><strong>{settings.comfyuiCloudReady ? "Ready" : settings.hasComfyuiCloudApiKey ? "Needs workflow" : "No key"}</strong></summary>
               <div className="form-stack">
                 <label>Base URL<input value={settings.comfyuiCloudBaseUrl} onChange={(event) => update({ comfyuiCloudBaseUrl: event.target.value })} /></label>
                 <label>Generation path<input value={settings.comfyuiCloudGenerationPath} onChange={(event) => update({ comfyuiCloudGenerationPath: event.target.value })} /></label>

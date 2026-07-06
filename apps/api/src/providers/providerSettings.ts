@@ -33,11 +33,28 @@ export interface ProviderSettings {
   wavespeedImageGenerationPath: string;
   hasHermesApiKey: boolean;
   hasComfyuiCloudApiKey: boolean;
+  hasActiveComfyuiCloudWorkflow: boolean;
+  comfyuiCloudReady: boolean;
   hasOpenaiApiKey: boolean;
   hasWavespeedApiKey: boolean;
 }
 
+export function getActiveComfyWorkflow(db: AppDatabase, routeTier = "sfw_standard") {
+  return (
+    getDefaultComfyWorkflowForTier(db, routeTier) ??
+    getDefaultComfyWorkflowForTier(db, "sfw_standard") ??
+    getDefaultComfyWorkflowForTier(db, "mature_adult")
+  );
+}
+
+export function hasRunnableComfyWorkflow(db: AppDatabase, routeTier = "sfw_standard") {
+  const workflow = getActiveComfyWorkflow(db, routeTier);
+  return Boolean(workflow && Object.keys(workflow.workflow).length > 0 && workflow.output_node_ids.length > 0);
+}
+
 export function getProviderSettings(db: AppDatabase, config: ApiConfig): ProviderSettings {
+  const hasComfyuiCloudApiKey = Boolean(getSetting(db, "comfyuiCloudApiKey") ?? config.comfyuiCloudApiKey);
+  const hasActiveComfyuiCloudWorkflow = hasRunnableComfyWorkflow(db);
   return {
     mockProviders: (getSetting(db, "mockProviders") ?? String(config.mockProviders)) !== "false",
     defaultImageGenerationProvider: getSetting(db, "defaultImageGenerationProvider") ?? "mock",
@@ -56,7 +73,9 @@ export function getProviderSettings(db: AppDatabase, config: ApiConfig): Provide
     wavespeedBaseUrl: getSetting(db, "wavespeedBaseUrl") ?? config.wavespeedBaseUrl,
     wavespeedImageGenerationPath: getSetting(db, "wavespeedImageGenerationPath") ?? config.wavespeedImageGenerationPath,
     hasHermesApiKey: Boolean(getSetting(db, "hermesApiKey") ?? config.hermesApiKey),
-    hasComfyuiCloudApiKey: Boolean(getSetting(db, "comfyuiCloudApiKey") ?? config.comfyuiCloudApiKey),
+    hasComfyuiCloudApiKey,
+    hasActiveComfyuiCloudWorkflow,
+    comfyuiCloudReady: hasComfyuiCloudApiKey && hasActiveComfyuiCloudWorkflow,
     hasOpenaiApiKey: Boolean(getSetting(db, "openaiApiKey") ?? config.openaiApiKey),
     hasWavespeedApiKey: Boolean(getSetting(db, "wavespeedApiKey") ?? config.wavespeedApiKey)
   };
@@ -66,7 +85,14 @@ export function updateProviderSettings(
   db: AppDatabase,
   input: Partial<ProviderSettings> & { hermesApiKey?: string; comfyuiCloudApiKey?: string; openaiApiKey?: string; wavespeedApiKey?: string }
 ) {
-  const ignoredKeys = new Set(["hasHermesApiKey", "hasComfyuiCloudApiKey", "hasOpenaiApiKey", "hasWavespeedApiKey"]);
+  const ignoredKeys = new Set([
+    "hasHermesApiKey",
+    "hasComfyuiCloudApiKey",
+    "hasActiveComfyuiCloudWorkflow",
+    "comfyuiCloudReady",
+    "hasOpenaiApiKey",
+    "hasWavespeedApiKey"
+  ]);
   const secretKeys = new Set(["hermesApiKey", "comfyuiCloudApiKey", "openaiApiKey", "wavespeedApiKey"]);
   for (const [key, value] of Object.entries(input)) {
     if (ignoredKeys.has(key)) continue;
@@ -117,7 +143,7 @@ export function getOpenAIImageGenerationProvider(settings: ProviderSettings, db:
 }
 
 export function getComfyImageGenerationProvider(settings: ProviderSettings, db: AppDatabase, config: ApiConfig, routeTier: string) {
-  const workflow = getDefaultComfyWorkflowForTier(db, routeTier) ?? getDefaultComfyWorkflowForTier(db, "sfw_standard") ?? getDefaultComfyWorkflowForTier(db, "mature_adult");
+  const workflow = getActiveComfyWorkflow(db, routeTier);
   return new ComfyUICloudImageGenerationProvider({
     baseUrl: settings.comfyuiCloudBaseUrl,
     apiKey: getSetting(db, "comfyuiCloudApiKey") ?? config.comfyuiCloudApiKey,
@@ -150,6 +176,18 @@ export function getImageAnalysisProvider(settings: ProviderSettings, db: AppData
 
 export async function testImageGenerationProvider(db: AppDatabase, config: ApiConfig, runService: RunService) {
   const settings = getProviderSettings(db, config);
+  if (settings.defaultImageGenerationProvider === "comfyui-cloud" && !settings.comfyuiCloudReady) {
+    const missing = [
+      settings.hasComfyuiCloudApiKey ? null : "API key",
+      settings.hasActiveComfyuiCloudWorkflow ? null : "active workflow"
+    ].filter(Boolean);
+    return {
+      ok: false,
+      setupRequired: true,
+      provider: "comfyui-cloud-image-generation",
+      error: `ComfyUI Cloud is not ready. Configure ${missing.join(" and ")} before testing image generation.`
+    };
+  }
   const provider = getImageGenerationProvider(settings, db, config);
   const run = runService.createRun({ type: "image_generation", title: "Provider Test: Image Generation" });
   runService.updateRunStatus(run.id, "running");
