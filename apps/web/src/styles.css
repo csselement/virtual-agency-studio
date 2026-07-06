@@ -6168,6 +6168,233 @@ textarea::placeholder {
   background: #f5f5f4;
 }
 
+/* Taste Skill publishing desk calibration: match the reference console proportions. */
+@media (min-width: 1181px) {
+  .app-shell {
+    grid-template-columns: 204px minmax(0, 1fr);
+  }
+
+  .sidebar {
+    padding: 18px 12px;
+  }
+
+  .brand {
+    grid-template-columns: 42px minmax(0, 1fr);
+    gap: 12px;
+    min-height: 48px;
+  }
+
+  .brand-mark {
+    width: 42px;
+    height: 42px;
+  }
+
+  .brand strong {
+    max-width: 116px;
+    font-size: 13px;
+    line-height: 1.08;
+    letter-spacing: 3px;
+  }
+
+  .nav-list a {
+    min-height: 43px;
+    padding: 8px 10px;
+  }
+
+  .nav-list a small {
+    display: none;
+  }
+
+  .workspace {
+    padding-right: 28px;
+    padding-left: 28px;
+  }
+
+  .workspace-chrome {
+    top: 14px;
+    right: 28px;
+    width: min(475px, calc(100% - 430px));
+  }
+
+  .workspace-status-strip {
+    gap: 22px;
+  }
+
+  .workspace-status-strip span {
+    color: #1c1917;
+    font-size: 10px;
+    font-weight: 700;
+  }
+
+  .workspace-status-strip span {
+    display: inline-flex;
+    align-items: center;
+  }
+
+  .workspace-status-strip svg {
+    color: #167765;
+    background: transparent;
+  }
+
+  .health span,
+  .rail-system i {
+    background: #167765;
+  }
+
+  .workspace-clock strong {
+    font-size: 13px;
+    line-height: 1.1;
+  }
+
+  .workspace-clock span {
+    font-size: 11px;
+  }
+
+  .calendar-topbar,
+  .topbar.page-heading {
+    min-height: 82px;
+    margin-right: -28px;
+    margin-left: -28px;
+    padding: 20px 28px 17px;
+  }
+
+  .calendar-topbar h1,
+  .page-heading h1 {
+    font-size: 22px;
+    line-height: 1.12;
+  }
+
+  .calendar-topbar p {
+    display: block;
+    margin-top: 6px;
+    color: #716f69;
+    font-size: 13px;
+    line-height: 1.25;
+  }
+
+  .calendar-agency-layout {
+    grid-template-columns: minmax(0, 1fr) 382px;
+    margin-right: -28px;
+    margin-left: -28px;
+  }
+
+  .calendar-agency-layout .publishing-desk {
+    grid-template-columns: minmax(0, 1.9fr) minmax(300px, 0.82fr);
+  }
+
+  .route-matrix-panel,
+  .desk-overview-panel,
+  .publishing-ledger-calendar,
+  .review-queue-strip,
+  .recent-runs-table {
+    padding-right: 28px;
+    padding-left: 28px;
+  }
+
+  .route-matrix th,
+  .route-matrix td {
+    height: 32px;
+  }
+
+  .desk-overview-panel {
+    gap: 20px;
+  }
+
+  .desk-stat-row {
+    gap: 16px;
+  }
+
+  .desk-stat-row strong,
+  .calendar-agency-layout .desk-stat-row strong {
+    font-size: 28px;
+    font-weight: 500;
+  }
+
+  .desk-stat-row small {
+    max-width: 72px;
+  }
+
+  .desk-next-window div {
+    padding: 13px 0;
+  }
+
+  .desk-next-window dd {
+    font-size: 20px;
+  }
+
+  .ledger-calendar-header {
+    margin-bottom: 9px;
+  }
+
+  .week-grid {
+    grid-template-columns: 54px repeat(7, minmax(104px, 1fr));
+  }
+
+  .calendar-agency-layout .time-cell,
+  .calendar-agency-layout .ledger-cell {
+    min-height: 68px;
+  }
+
+  .ledger-cell {
+    padding: 6px;
+  }
+
+  .calendar-agency-layout .ledger-post {
+    min-height: 48px;
+    padding: 7px 8px 7px 10px;
+    border-left-width: 3px;
+  }
+
+  .calendar-agency-layout .ledger-post strong {
+    font-size: 11px;
+  }
+
+  .publication-dossier-panel {
+    padding: 18px 24px 24px;
+  }
+
+  .dossier-heading {
+    margin-bottom: 18px;
+  }
+
+  .dossier-media {
+    aspect-ratio: 1 / 0.9;
+    background: #e5e1da;
+  }
+
+  .dossier-media-generated {
+    background: #e7e2d8;
+  }
+
+  .dossier-media-generated img {
+    object-fit: contain;
+    padding: 20px;
+  }
+
+  .calendar-dossier p {
+    font-size: 13px;
+    line-height: 1.45;
+  }
+
+  .calendar-facts div {
+    grid-template-columns: 92px minmax(0, 1fr);
+    padding: 8px 0;
+  }
+
+  .approval-stack div {
+    min-height: 56px;
+  }
+}
+
+.review-card-row:has(.empty-state) {
+  grid-template-columns: 1fr;
+}
+
+.review-card-row > .empty-state {
+  min-height: 92px;
+  padding: 18px;
+}
+
 .casting-mark,
 .identity-portrait {
   background: #efedeb;
@@ -6886,5 +7113,331 @@ summary {
   .draft-primary-actions,
   .calendar-actions {
     grid-template-columns: 1fr;
+  }
+}
+
+/* Final Settings layout contract. Kept last so legacy dashboard grids do not override it. */
+@media (min-width: 1181px) {
+  .topbar.page-heading + .ops-console {
+    margin-top: 16px;
+  }
+
+  .ops-console {
+    display: grid;
+    grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.4fr) !important;
+    gap: 18px;
+  }
+
+  .ops-console > :first-child,
+  .ops-console > :last-child {
+    grid-column: auto !important;
+  }
+
+  .ops-hero {
+    min-height: 132px;
+    padding: 16px;
+  }
+
+  .ops-hero h2 {
+    max-width: 15ch;
+    font-size: 24px;
+    line-height: 1.08;
+  }
+
+  .ops-hero p {
+    margin-top: 8px;
+    font-size: 13px;
+    line-height: 1.3;
+  }
+
+  .ops-hero .button-stack {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    margin-top: 12px;
+  }
+
+  .ops-stat-grid {
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 8px;
+  }
+
+  .ops-stat-grid article {
+    min-height: 92px;
+    padding: 12px;
+  }
+
+  .ops-stat-grid span,
+  .ops-stat-grid p {
+    font-size: 11px;
+    line-height: 1.25;
+  }
+
+  .ops-stat-grid strong {
+    display: block;
+    margin-top: 10px;
+    font-size: 20px;
+  }
+
+  .settings-switcher {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr)) !important;
+    gap: 8px;
+    margin-top: 12px;
+    margin-bottom: 16px;
+  }
+
+  .settings-switcher > * {
+    grid-column: auto !important;
+  }
+
+  .settings-switcher button {
+    grid-template-columns: minmax(0, 1fr) auto;
+    min-height: 62px;
+    padding: 10px 12px;
+  }
+
+  .settings-switcher span {
+    font-size: 12px;
+    line-height: 1.15;
+  }
+
+  .settings-switcher strong {
+    font-size: 18px;
+  }
+
+  .settings-switcher small {
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .settings-workbench {
+    display: grid;
+    gap: 18px;
+  }
+
+  .routing-workbench {
+    grid-template-columns: 380px minmax(0, 1fr) !important;
+  }
+
+  .workflow-workbench {
+    grid-template-columns: minmax(360px, 0.8fr) minmax(0, 1.2fr) !important;
+  }
+
+  .automation-workbench {
+    grid-template-columns: minmax(340px, 0.9fr) minmax(300px, 0.75fr) minmax(260px, 0.6fr) !important;
+  }
+
+  .manual-workbench {
+    grid-template-columns: 380px minmax(0, 1fr) !important;
+  }
+
+  .settings-workbench > *,
+  .routing-workbench > :first-child,
+  .routing-workbench > :last-child,
+  .workflow-workbench > :first-child,
+  .workflow-workbench > :last-child,
+  .manual-workbench > :first-child,
+  .manual-workbench > :last-child,
+  .automation-workbench > * {
+    grid-column: auto !important;
+  }
+
+  .settings-preview {
+    padding: 18px 20px;
+  }
+
+  .settings-preview .section-heading {
+    align-items: center;
+    min-height: 24px;
+    margin-bottom: 18px;
+  }
+
+  .settings-primary-panel .form-stack {
+    gap: 12px;
+  }
+
+  .settings-primary-panel select,
+  .settings-primary-panel input {
+    min-height: 44px;
+  }
+
+  .routing-workbench .settings-action-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+    margin-top: 2px;
+  }
+
+  .routing-workbench .settings-action-grid .primary-action {
+    grid-column: auto;
+  }
+
+  .settings-action-grid button,
+  .settings-preview > .primary-action,
+  .settings-preview > .form-stack > button {
+    min-height: 42px;
+    padding: 0 12px;
+    white-space: nowrap;
+  }
+
+  .settings-action-grid button:disabled {
+    border-color: #e7e5e4;
+    background: #f5f5f4;
+    color: #7c7771;
+    opacity: 1;
+  }
+
+  .settings-action-grid .primary-action:disabled {
+    border-color: #d6d3d1;
+    background: transparent;
+    color: #57534e;
+  }
+
+  .provider-matrix {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    align-content: start;
+    gap: 10px;
+  }
+
+  .provider-matrix > .section-heading {
+    grid-column: 1 / -1;
+    margin-bottom: 2px;
+  }
+
+  .provider-drawer {
+    background: #f5f5f4;
+  }
+
+  .provider-drawer summary {
+    min-height: 54px;
+    padding: 0 14px;
+  }
+
+  .provider-drawer summary span {
+    font-size: 14px;
+    line-height: 1.2;
+  }
+
+  .provider-drawer summary strong {
+    color: #716f69;
+    font-size: 11px;
+    line-height: 1.2;
+  }
+
+  .provider-drawer[open] {
+    grid-column: 1 / -1;
+    background: #fafaf9;
+  }
+
+  .provider-drawer .form-stack {
+    margin: 14px;
+  }
+}
+
+@media (max-width: 900px) {
+  .ops-console {
+    gap: 10px;
+  }
+
+  .ops-hero .button-stack,
+  .settings-action-grid,
+  .manual-actions {
+    grid-template-columns: 1fr;
+  }
+
+  .settings-switcher {
+    grid-template-columns: repeat(2, minmax(0, 1fr)) !important;
+  }
+
+  .settings-switcher button {
+    min-height: 68px;
+    padding: 10px;
+  }
+
+  .settings-workbench,
+  .routing-workbench,
+  .workflow-workbench,
+  .automation-workbench,
+  .manual-workbench {
+    grid-template-columns: 1fr !important;
+  }
+
+  .settings-workbench > *,
+  .routing-workbench > *,
+  .workflow-workbench > *,
+  .automation-workbench > *,
+  .manual-workbench > * {
+    grid-column: auto !important;
+  }
+
+  .provider-matrix {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* Final mobile navigation contract: keep the operator rail compact and readable. */
+@media (max-width: 900px) {
+  .sidebar {
+    gap: 10px;
+    padding: 12px 12px 10px;
+  }
+
+  .brand {
+    grid-template-columns: 32px minmax(0, 1fr);
+    min-height: 36px;
+  }
+
+  .brand-mark {
+    width: 32px;
+    height: 32px;
+  }
+
+  .brand strong {
+    font-size: 10px;
+    letter-spacing: 2px;
+    line-height: 1.08;
+  }
+
+  .nav-list {
+    display: flex;
+    gap: 8px;
+    max-width: none;
+    margin: 0 -12px;
+    padding: 0 12px 2px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scrollbar-width: none;
+    scroll-snap-type: x proximity;
+  }
+
+  .nav-list::-webkit-scrollbar {
+    display: none;
+  }
+
+  .nav-list a {
+    flex: 0 0 104px;
+    grid-template-columns: 18px minmax(0, 1fr);
+    gap: 8px;
+    justify-items: start;
+    min-height: 44px;
+    padding: 8px 10px;
+    scroll-snap-align: start;
+    text-align: left;
+  }
+
+  .nav-copy {
+    display: block;
+    width: 100%;
+  }
+
+  .nav-list a strong {
+    overflow: hidden;
+    font-size: 11px;
+    line-height: 1.1;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .nav-list .nav-badge {
+    justify-self: end;
   }
 }

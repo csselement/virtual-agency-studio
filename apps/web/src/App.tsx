@@ -3214,6 +3214,7 @@ function CalendarLedgerPage({ navigate }: { navigate: (path: string) => void }) 
       <header className="topbar page-heading calendar-topbar">
         <div>
           <h1>Publishing Desk</h1>
+          <p>Run control, publishing ledger, and review.</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -3363,7 +3364,7 @@ function CalendarLedgerPage({ navigate }: { navigate: (path: string) => void }) 
                 <strong>{platformLabel(selectedEvent.platform)} Post</strong>
                 <em>{selectedEvent.status.replaceAll("_", " ")}</em>
               </div>
-              <div className="dossier-media">
+              <div className={selectedAsset?.mime_type?.includes("svg") ? "dossier-media dossier-media-generated" : "dossier-media"}>
                 {dossierImageUrl ? <img src={dossierImageUrl} alt={selectedVariant?.alt_text ?? selectedDraft?.title ?? "Publication asset"} /> : <span>VA</span>}
               </div>
               <h2>{selectedDraft?.title ?? (selectedEvent.live_url ? "Live post" : "Ledger entry")}</h2>
@@ -3851,6 +3852,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
         <div>
           <span className="eyebrow">Local controls</span>
           <h1>Operations</h1>
+          <p>Provider routing, automation gates, and manual dispatch.</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
