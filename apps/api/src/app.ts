@@ -126,6 +126,148 @@ export function buildApp(config: ApiConfig) {
     version: config.version
   }));
 
+  app.get("/api/workflow/summary", async () => {
+    const characters = listCharacters(db);
+    const runs = listRuns(db);
+    const assets = listAssets(db);
+    const drafts = listDrafts(db);
+    const publishingEvents = listPublishingEvents(db);
+    const feedback = characters.flatMap((character) => listCharacterFeedback(db, character.id));
+    const reflections = characters.flatMap((character) => listCharacterReflections(db, character.id));
+    const pendingIdentityProposals = characters.flatMap((character) =>
+      listCharacterIdentityProposals(db, character.id).filter((proposal) => proposal.status === "proposed")
+    );
+
+    const birthRuns = runs.filter((run) => run.type === "character_birth");
+    const activeRuns = runs.filter((run) => ["queued", "running", "waiting_for_provider"].includes(run.status));
+    const reviewRuns = runs.filter((run) => run.status === "needs_review");
+    const productionAssets = assets.filter((asset) => ["raw_generation", "candidate"].includes(asset.status));
+    const candidateProductionAssets = productionAssets.filter((asset) => asset.status === "candidate");
+    const rawProductionAssets = productionAssets.filter((asset) => asset.status === "raw_generation");
+    const approvedAssets = assets.filter((asset) => asset.status === "approved_post_asset" || asset.status === "approved_reference");
+    const reviewDrafts = drafts.filter((draft) => draft.status === "needs_review");
+    const publishReadyDrafts = drafts.filter((draft) => draft.status === "approved" || draft.status === "exported");
+    const publishedEvents = publishingEvents.filter((event) => event.status === "published" || Boolean(event.published_at));
+    const feedbackEventIds = new Set(feedback.map((item) => item.publishing_event_id).filter(Boolean));
+    const reflectedFeedbackIds = new Set(reflections.map((item) => item.social_feedback_id).filter(Boolean));
+    const feedbackAwaitingReflection = feedback.filter((item) => !reflectedFeedbackIds.has(item.id));
+    const eventsNeedingFeedback = publishingEvents.filter(
+      (event) => (event.status === "needs_feedback" || event.status === "published" || Boolean(event.published_at)) && !feedbackEventIds.has(event.id)
+    );
+    const statusFor = (hasAttention: boolean, hasReady: boolean, complete: boolean) => {
+      if (hasAttention) return "attention";
+      if (hasReady) return "ready";
+      if (complete) return "complete";
+      return "blocked";
+    };
+
+    return {
+      stages: [
+        {
+          id: "heartbeat",
+          label: "Heartbeat",
+          path: "/",
+          status: activeRuns.length || reviewRuns.length ? "attention" : "ready",
+          count: activeRuns.length + reviewRuns.length,
+          detail: activeRuns.length
+            ? `${activeRuns.length} active automation run${activeRuns.length === 1 ? "" : "s"}`
+            : reviewRuns.length
+              ? `${reviewRuns.length} run review gate${reviewRuns.length === 1 ? "" : "s"}`
+              : "Studio ready for the next operator action",
+          primaryActionLabel: reviewRuns.length ? "Open review gates" : "Open workflow",
+          primaryActionPath: reviewRuns.length ? "/runs?status=needs_review" : "/characters"
+        },
+        {
+          id: "birth",
+          label: "Birth",
+          path: "/characters",
+          status: statusFor(birthRuns.some((run) => run.status === "needs_review"), characters.length === 0, characters.length > 0),
+          count: characters.length,
+          detail: birthRuns.some((run) => run.status === "needs_review")
+            ? "Birth Run output needs operator review"
+            : characters.length
+            ? `${characters.length} character profile${characters.length === 1 ? "" : "s"} in the roster`
+            : "Create the first character profile and start a Birth Run",
+          primaryActionLabel: birthRuns.some((run) => run.status === "needs_review") ? "Review Birth Run" : characters.length ? "Open cast" : "Create character",
+          primaryActionPath: birthRuns.some((run) => run.status === "needs_review") ? "/runs?status=needs_review" : "/characters"
+        },
+        {
+          id: "production",
+          label: "Production",
+          path: "/assets",
+          status: statusFor(productionAssets.length > 0, characters.length > 0 && approvedAssets.length === 0, approvedAssets.length > 0),
+          count: productionAssets.length + approvedAssets.length,
+          detail: productionAssets.length
+            ? `${productionAssets.length} asset${productionAssets.length === 1 ? "" : "s"} need analysis or approval`
+            : approvedAssets.length
+              ? `${approvedAssets.length} approved asset${approvedAssets.length === 1 ? "" : "s"} ready for drafts`
+              : characters.length
+                ? "Generate or import assets for the active cast"
+                : "Birth a character before production",
+          primaryActionLabel: productionAssets.length ? "Review assets" : "Open archive",
+          primaryActionPath: candidateProductionAssets.length
+            ? "/assets?status=candidate"
+            : rawProductionAssets.length
+              ? "/assets?status=raw_generation"
+              : "/assets"
+        },
+        {
+          id: "review",
+          label: "Review",
+          path: "/drafts",
+          status: statusFor(reviewDrafts.length + reviewRuns.length + pendingIdentityProposals.length > 0, approvedAssets.length > 0, drafts.some((draft) => ["approved", "exported", "published"].includes(draft.status))),
+          count: reviewDrafts.length + reviewRuns.length + pendingIdentityProposals.length,
+          detail:
+            reviewDrafts.length || reviewRuns.length || pendingIdentityProposals.length
+              ? `${reviewDrafts.length} drafts, ${reviewRuns.length} runs, ${pendingIdentityProposals.length} identity proposals`
+              : drafts.length
+                ? "Draft review gates are clear"
+                : "Approve an asset, then create a reviewable draft",
+          primaryActionLabel: reviewDrafts.length ? "Review drafts" : reviewRuns.length ? "Review runs" : "Open Review Desk",
+          primaryActionPath: reviewDrafts.length ? "/drafts?status=needs_review" : reviewRuns.length ? "/runs?status=needs_review" : "/drafts"
+        },
+        {
+          id: "publishing",
+          label: "Publishing",
+          path: "/calendar",
+          status: statusFor(publishReadyDrafts.length > 0, drafts.length > 0, publishedEvents.length > 0),
+          count: publishReadyDrafts.length + publishedEvents.length,
+          detail: publishReadyDrafts.length
+            ? `${publishReadyDrafts.length} approved/exported draft${publishReadyDrafts.length === 1 ? "" : "s"} need manual publishing`
+            : publishedEvents.length
+              ? `${publishedEvents.length} live ledger event${publishedEvents.length === 1 ? "" : "s"}`
+              : "Approve and export a draft before publishing",
+          primaryActionLabel: publishReadyDrafts.length ? "Open ledger" : "Open calendar",
+          primaryActionPath: publishReadyDrafts.length ? "/calendar?bucket=draft_ready" : "/calendar"
+        },
+        {
+          id: "feedback",
+          label: "Feedback",
+          path: "/feedback",
+          status: eventsNeedingFeedback.length
+            ? "attention"
+            : feedbackAwaitingReflection.length
+              ? "attention"
+            : reflections.length > 0
+              ? "complete"
+              : publishedEvents.length
+                ? "ready"
+                : "blocked",
+          count: eventsNeedingFeedback.length + feedbackAwaitingReflection.length,
+          detail: eventsNeedingFeedback.length
+            ? `${eventsNeedingFeedback.length} published event${eventsNeedingFeedback.length === 1 ? "" : "s"} need response logging`
+            : feedbackAwaitingReflection.length
+              ? `${feedbackAwaitingReflection.length} feedback log${feedbackAwaitingReflection.length === 1 ? "" : "s"} ready for reflection`
+            : reflections.length > 0
+              ? "Reflection has fed identity proposals"
+              : "Publish a draft before feedback",
+          primaryActionLabel: eventsNeedingFeedback.length ? "Log feedback" : feedbackAwaitingReflection.length ? "Run reflection" : publishedEvents.length || reflections.length ? "Open feedback" : "Open publishing",
+          primaryActionPath: eventsNeedingFeedback[0] ? `/feedback?eventId=${eventsNeedingFeedback[0].id}` : publishedEvents.length || reflections.length || feedbackAwaitingReflection.length ? "/feedback" : "/calendar"
+        }
+      ]
+    };
+  });
+
   app.get("/api/characters", async () => ({
     characters: listCharacters(db)
   }));

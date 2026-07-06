@@ -56,6 +56,21 @@ describe("api app", () => {
     const response = await app.inject({ method: "GET", url: "/api/characters" });
     expect(response.statusCode).toBe(200);
     expect(response.json()).toEqual({ characters: [] });
+    const workflow = await app.inject({ method: "GET", url: "/api/workflow/summary" });
+    expect(workflow.statusCode).toBe(200);
+    expect(workflow.json().stages.map((stage: { id: string }) => stage.id)).toEqual([
+      "heartbeat",
+      "birth",
+      "production",
+      "review",
+      "publishing",
+      "feedback"
+    ]);
+    expect(workflow.json().stages.find((stage: { id: string }) => stage.id === "birth")).toMatchObject({
+      status: "ready",
+      count: 0,
+      primaryActionPath: "/characters"
+    });
     await app.close();
     rmSync(dir, { recursive: true, force: true });
   });
@@ -579,12 +594,35 @@ describe("api app", () => {
     const recipe = await app.inject({ method: "POST", url: "/api/prompt-recipes/compose", payload: { characterId, platform: "Instagram", scene: "Feedback-ready portrait." } });
     const generated = await app.inject({ method: "POST", url: `/api/prompt-recipes/${recipe.json().recipe.id}/generate-image` });
     const assetId = generated.json().asset.id;
+    const rawProductionSummary = await app.inject({ method: "GET", url: "/api/workflow/summary" });
+    expect(rawProductionSummary.json().stages.find((stage: { id: string }) => stage.id === "production")).toMatchObject({
+      status: "attention",
+      primaryActionPath: "/assets?status=raw_generation"
+    });
     await app.inject({ method: "POST", url: `/api/assets/${assetId}/analyze` });
+    const candidateProductionSummary = await app.inject({ method: "GET", url: "/api/workflow/summary" });
+    expect(candidateProductionSummary.json().stages.find((stage: { id: string }) => stage.id === "production")).toMatchObject({
+      status: "attention",
+      primaryActionPath: "/assets?status=candidate"
+    });
     await app.inject({ method: "POST", url: `/api/assets/${assetId}/review`, payload: { status: "approved_post_asset" } });
     const draft = await app.inject({ method: "POST", url: `/api/assets/${assetId}/create-draft` });
     const draftId = draft.json().draft.id;
+    const reviewSummary = await app.inject({ method: "GET", url: "/api/workflow/summary" });
+    expect(reviewSummary.json().stages.find((stage: { id: string }) => stage.id === "production")).toMatchObject({
+      status: "complete"
+    });
+    expect(reviewSummary.json().stages.find((stage: { id: string }) => stage.id === "review")).toMatchObject({
+      status: "attention",
+      primaryActionPath: "/drafts?status=needs_review"
+    });
     const published = await app.inject({ method: "POST", url: `/api/drafts/${draftId}/publish`, payload: { platform: "instagram", liveUrl: "https://example.com/reflection" } });
     const eventId = published.json().event.id;
+    const feedbackDueSummary = await app.inject({ method: "GET", url: "/api/workflow/summary" });
+    expect(feedbackDueSummary.json().stages.find((stage: { id: string }) => stage.id === "feedback")).toMatchObject({
+      status: "attention",
+      primaryActionPath: `/feedback?eventId=${eventId}`
+    });
 
     const feedback = await app.inject({
       method: "POST",
@@ -604,11 +642,24 @@ describe("api app", () => {
       }
     });
     expect(feedback.statusCode).toBe(201);
+    const feedbackLoggedSummary = await app.inject({ method: "GET", url: "/api/workflow/summary" });
+    expect(feedbackLoggedSummary.json().stages.find((stage: { id: string }) => stage.id === "feedback")).toMatchObject({
+      status: "attention",
+      count: 1,
+      primaryActionLabel: "Run reflection",
+      primaryActionPath: "/feedback"
+    });
 
     const reflection = await app.inject({ method: "POST", url: `/api/feedback/${feedback.json().feedback.id}/reflection-run` });
     expect(reflection.statusCode).toBe(201);
     expect(reflection.json().reflection.summary).toContain("engagement");
     expect(reflection.json().proposals.map((proposal: { kind: string }) => proposal.kind)).toContain("memory");
+    const reflectionSummary = await app.inject({ method: "GET", url: "/api/workflow/summary" });
+    expect(reflectionSummary.json().stages.find((stage: { id: string }) => stage.id === "feedback")).toMatchObject({
+      status: "complete",
+      count: 0
+    });
+    expect(reflectionSummary.json().stages.find((stage: { id: string }) => stage.id === "review").count).toBeGreaterThan(0);
     const memoryProposal = reflection.json().proposals.find((proposal: { kind: string }) => proposal.kind === "memory");
 
     const approved = await app.inject({ method: "POST", url: `/api/identity-proposals/${memoryProposal.id}/review`, payload: { status: "approved" } });

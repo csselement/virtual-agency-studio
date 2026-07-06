@@ -387,27 +387,50 @@ interface AppData {
   characters: CharacterSummary[];
   runs: RunSummary[];
   automationStatus: AutomationStatus | null;
+  workflowSummary: WorkflowStageSummary[];
 }
 
-const navItems = [
-  { label: "Heartbeat", path: "/", detail: "Studio state", icon: Pulse },
-  { label: "Publishing", path: "/calendar", detail: "Ledger", icon: CalendarBlank },
-  { label: "Timeline", path: "/runs", detail: "Agent trace", icon: ClockCounterClockwise },
-  { label: "Review Desk", path: "/drafts", detail: "Approvals", icon: CheckSquare },
-  { label: "Casting", path: "/characters", detail: "Identity", icon: User },
-  { label: "Library", path: "/assets", detail: "Media", icon: Image },
-  { label: "Prompt Studio", path: "/prompt-studio", detail: "Briefs and recipes", icon: MagicWand },
-  { label: "Operations", path: "/settings", detail: "Routing", icon: Gear }
+type WorkflowStageId = "heartbeat" | "birth" | "production" | "review" | "publishing" | "feedback";
+type WorkflowStageStatus = "blocked" | "ready" | "attention" | "complete";
+
+interface WorkflowStageSummary {
+  id: WorkflowStageId;
+  label: string;
+  path: string;
+  status: WorkflowStageStatus;
+  count: number;
+  detail: string;
+  primaryActionLabel: string;
+  primaryActionPath: string;
+}
+
+export const workflowStageModel: Array<{
+  id: WorkflowStageId;
+  label: string;
+  detail: string;
+  path: string;
+  icon: PhosphorIconComponent;
+}> = [
+  { id: "heartbeat", label: "Heartbeat", detail: "Next action", path: "/", icon: Pulse },
+  { id: "birth", label: "Birth", detail: "Characters", path: "/characters", icon: User },
+  { id: "production", label: "Production", detail: "Assets", path: "/assets", icon: Image },
+  { id: "review", label: "Review", detail: "Approvals", path: "/drafts", icon: CheckSquare },
+  { id: "publishing", label: "Publishing", detail: "Ledger", path: "/calendar", icon: CalendarBlank },
+  { id: "feedback", label: "Feedback", detail: "Response", path: "/feedback", icon: BookOpen }
 ];
 
-const workflowSteps = [
-  { label: "Identity", detail: "Character", path: "/characters", icon: User },
-  { label: "Concept", detail: "Brief", path: "/prompt-studio", icon: Article },
-  { label: "Produce", detail: "Assets", path: "/assets", icon: Image },
-  { label: "Approve", detail: "Review", path: "/drafts", icon: CheckCircle },
-  { label: "Publish", detail: "Ledger", path: "/calendar", icon: Package },
-  { label: "Learn", detail: "Response", path: "/runs?type=feedback_reflection", icon: BookOpen }
+const supportNavItems = [
+  { id: "timeline", label: "Timeline", path: "/runs", detail: "Run trace", icon: ClockCounterClockwise },
+  { id: "prompt-studio", label: "Prompt Studio", path: "/prompt-studio", detail: "Briefs", icon: MagicWand },
+  { id: "operations", label: "Operations", path: "/settings", detail: "Routing", icon: Gear }
 ];
+
+const navItems = [
+  ...workflowStageModel,
+  ...supportNavItems
+];
+
+const workflowSteps = workflowStageModel.filter((stage) => stage.id !== "heartbeat");
 
 const runTypeLabels: Record<string, string> = {
   character_birth: "Character Birth",
@@ -614,8 +637,53 @@ function usePath() {
   return { path, navigate };
 }
 
+function searchParamsFrom(search?: string) {
+  if (search !== undefined) {
+    return new URLSearchParams(search);
+  }
+  return new URLSearchParams(typeof window === "undefined" ? "" : window.location.search);
+}
+
+export function readCharacterRouteState(search?: string) {
+  return { selected: searchParamsFrom(search).get("selected") ?? "" };
+}
+
+export function readAssetRouteState(search?: string) {
+  const params = searchParamsFrom(search);
+  return {
+    characterId: params.get("characterId") ?? "",
+    status: params.get("status") ?? "",
+    platformFit: params.get("platformFit") ?? ""
+  };
+}
+
+export function readDraftRouteState(search?: string) {
+  return { status: searchParamsFrom(search).get("status") ?? "" };
+}
+
+export function readCalendarRouteState(search?: string) {
+  return { bucket: searchParamsFrom(search).get("bucket") ?? "all" };
+}
+
+export function readFeedbackRouteState(search?: string) {
+  return { eventId: searchParamsFrom(search).get("eventId") ?? "" };
+}
+
+function replaceRouteQuery(path: string, values: Record<string, string | null | undefined>) {
+  const params = new URLSearchParams(window.location.search);
+  Object.entries(values).forEach(([key, value]) => {
+    if (value) {
+      params.set(key, value);
+    } else {
+      params.delete(key);
+    }
+  });
+  const query = params.toString();
+  window.history.replaceState({}, "", query ? `${path}?${query}` : path);
+}
+
 function useAppData() {
-  const [data, setData] = useState<AppData>({ health: null, characters: [], runs: [], automationStatus: null });
+  const [data, setData] = useState<AppData>({ health: null, characters: [], runs: [], automationStatus: null, workflowSummary: [] });
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
 
@@ -625,22 +693,24 @@ function useAppData() {
 
     async function load() {
       try {
-        const [healthResponse, charactersResponse, runsResponse, automationResponse] = await Promise.all([
+        const [healthResponse, charactersResponse, runsResponse, automationResponse, workflowResponse] = await Promise.all([
           fetch(`${apiBaseUrl()}/health`),
           fetch(`${apiBaseUrl()}/api/characters`),
           fetch(`${apiBaseUrl()}/api/runs`),
-          fetch(`${apiBaseUrl()}/api/automation/status`)
+          fetch(`${apiBaseUrl()}/api/automation/status`),
+          fetch(`${apiBaseUrl()}/api/workflow/summary`)
         ]);
 
-        if (!healthResponse.ok || !charactersResponse.ok || !runsResponse.ok || !automationResponse.ok) {
+        if (!healthResponse.ok || !charactersResponse.ok || !runsResponse.ok || !automationResponse.ok || !workflowResponse.ok) {
           throw new Error("One or more local API requests failed.");
         }
 
-        const [health, charactersPayload, runsPayload, automationPayload] = await Promise.all([
+        const [health, charactersPayload, runsPayload, automationPayload, workflowPayload] = await Promise.all([
           healthResponse.json() as Promise<ApiHealth>,
           charactersResponse.json() as Promise<{ characters: CharacterSummary[] }>,
           runsResponse.json() as Promise<{ runs: RunSummary[] }>,
-          automationResponse.json() as Promise<{ status: AutomationStatus }>
+          automationResponse.json() as Promise<{ status: AutomationStatus }>,
+          workflowResponse.json() as Promise<{ stages: WorkflowStageSummary[] }>
         ]);
 
         if (active) {
@@ -648,7 +718,8 @@ function useAppData() {
             health,
             characters: charactersPayload.characters,
             runs: runsPayload.runs,
-            automationStatus: automationPayload.status
+            automationStatus: automationPayload.status,
+            workflowSummary: workflowPayload.stages
           });
           setError(null);
           setLoading(false);
@@ -700,9 +771,6 @@ function workflowStepActive(path: string, stepPath: string) {
   if (stepPath === "/characters") {
     return path.startsWith("/characters");
   }
-  if (stepPath === "/prompt-studio") {
-    return path === "/prompt-studio";
-  }
   if (stepPath === "/assets") {
     return path === "/assets";
   }
@@ -712,10 +780,65 @@ function workflowStepActive(path: string, stepPath: string) {
   if (stepPath === "/calendar") {
     return path === "/calendar";
   }
-  if (stepPath.startsWith("/runs?type=feedback_reflection")) {
-    return path.startsWith("/runs") && window.location.search.includes("type=feedback_reflection");
+  if (stepPath === "/feedback") {
+    return path === "/feedback";
   }
   return false;
+}
+
+function getWorkflowStage(data: AppData, stageId: WorkflowStageId) {
+  return (
+    data.workflowSummary.find((stage) => stage.id === stageId) ??
+    workflowStageModel.find((stage) => stage.id === stageId)
+  );
+}
+
+function nextWorkflowStage(stageId: WorkflowStageId) {
+  const index = workflowStageModel.findIndex((stage) => stage.id === stageId);
+  return workflowStageModel[index + 1] ?? workflowStageModel[0];
+}
+
+function StageHandoff({
+  data,
+  stageId,
+  navigate
+}: {
+  data: AppData;
+  stageId: WorkflowStageId;
+  navigate: (path: string) => void;
+}) {
+  const stage = getWorkflowStage(data, stageId);
+  const nextStage = nextWorkflowStage(stageId);
+  if (!stage) return null;
+  const currentStatus = "status" in stage ? stage.status : "ready";
+  const currentDetail = "detail" in stage ? stage.detail : "Ready";
+  const primaryActionPath = "primaryActionPath" in stage ? stage.primaryActionPath : stage.path;
+  const primaryActionLabel = "primaryActionLabel" in stage ? stage.primaryActionLabel : `Open ${stage.label}`;
+  return (
+    <section className={`stage-handoff stage-handoff-${currentStatus}`} aria-label={`${stage.label} workflow handoff`}>
+      <div>
+        <span>Current stage</span>
+        <strong>{stage.label}</strong>
+        <p>{currentDetail}</p>
+      </div>
+      <div>
+        <span>Next</span>
+        <strong>{nextStage?.label ?? "Heartbeat"}</strong>
+        <p>{nextStage?.detail ?? "Return to the command center"}</p>
+      </div>
+      <div className="stage-handoff-actions">
+        <em>{currentStatus}</em>
+        <button className="primary-action" type="button" onClick={() => navigate(primaryActionPath)}>
+          {primaryActionLabel}
+        </button>
+        {nextStage && nextStage.path !== primaryActionPath && (
+          <button type="button" onClick={() => navigate(nextStage.path)}>
+            Continue
+          </button>
+        )}
+      </div>
+    </section>
+  );
 }
 
 function runQuery(status = "all", type = "all") {
@@ -756,6 +879,51 @@ function runFilterLabel(filter: string) {
     return "active runs";
   }
   return statusLabel(filter);
+}
+
+function StatusChoiceGroup({
+  label,
+  currentStatus,
+  options,
+  pendingValue,
+  onSelect
+}: {
+  label: string;
+  currentStatus: string;
+  options: Array<{ value: string; label: string; detail: string }>;
+  pendingValue: string | null;
+  onSelect: (value: string) => void;
+}) {
+  return (
+    <div className="status-choice-group" role="group" aria-label={label}>
+      {options.map((option) => {
+        const selected = option.value === currentStatus;
+        const pending = option.value === pendingValue;
+        const helper = selected ? "Current" : pending ? "Saving" : option.detail;
+        return (
+          <button
+            aria-disabled={selected || Boolean(pendingValue)}
+            aria-label={`${option.label}: ${helper}`}
+            aria-pressed={selected}
+            className={`status-choice${selected ? " is-selected" : ""}${pending ? " is-pending" : ""}`}
+            key={option.value}
+            type="button"
+            onClick={() => {
+              if (!selected && !pendingValue) {
+                onSelect(option.value);
+              }
+            }}
+          >
+            <span>
+              {selected && <CheckCircle aria-hidden size={14} weight="fill" />}
+              <strong>{option.label}</strong>
+            </span>
+            <small>{helper}</small>
+          </button>
+        );
+      })}
+    </div>
+  );
 }
 
 function JsonDetails({ value }: { value: unknown }) {
@@ -843,7 +1011,7 @@ function AppShell({
           {navItems.map((item) => {
             const active = path === item.path || (item.path !== "/" && path.startsWith(`${item.path}/`));
             const badge =
-              item.label === "Review Desk" && data.automationStatus?.runsNeedingReview.length
+              item.id === "review" && data.automationStatus?.runsNeedingReview.length
                 ? data.automationStatus.runsNeedingReview.length
                 : null;
             return (
@@ -894,6 +1062,7 @@ function AppShell({
         <nav className="studio-flow" aria-label="Studio production flow">
           {workflowSteps.map((step, index) => {
             const active = workflowStepActive(path, step.path);
+            const summary = data.workflowSummary.find((stage) => stage.id === step.id);
             const StepIcon = step.icon;
             return (
               <a
@@ -904,11 +1073,11 @@ function AppShell({
                 onClick={(event) => handleInternalLink(event, step.path)}
               >
                 <span className="flow-mark">
-                  <StepIcon aria-hidden="true" size={18} weight={active ? "bold" : "regular"} />
+                  <StepIcon aria-hidden={true} size={18} weight={active ? "bold" : "regular"} />
                   <em>{String(index + 1).padStart(2, "0")}</em>
                 </span>
                 <strong>{step.label}</strong>
-                <small>{step.detail}</small>
+                <small>{summary ? `${summary.count} · ${summary.status}` : step.detail}</small>
               </a>
             );
           })}
@@ -939,6 +1108,11 @@ function HeartbeatDashboard({
   const activeCharacters = data.characters.filter((character) => activeCharacterIds.has(character.id));
   const automationStatus = data.automationStatus;
   const primaryReview = automationStatus?.runsNeedingReview[0] ?? reviewRuns[0] ?? null;
+  const operatorStage =
+    data.workflowSummary.find((stage) => stage.status === "attention") ??
+    data.workflowSummary.find((stage) => stage.status === "ready") ??
+    data.workflowSummary[0] ??
+    null;
 
   const cards = [
     { label: "Operations", value: automationStatus?.schedulerEnabled ? "On" : "Off", detail: automationStatus?.schedulerEnabled ? "Armed" : "Dispatch", path: "/settings" },
@@ -954,18 +1128,12 @@ function HeartbeatDashboard({
       path: "/characters"
     }
   ];
-  const dispatchActions = [
-    { label: "Identity", value: data.characters.length, detail: "Character files", path: "/characters" },
-    { label: "Concept", value: "Brief", detail: "Prompt Studio", path: "/prompt-studio" },
-    { label: "Produce", value: "Image", detail: "Library", path: "/assets" },
-    { label: "Approve", value: reviewRuns.length, detail: "Gates", path: "/drafts" }
-  ];
+  const dispatchActions = data.workflowSummary.filter((stage) => stage.id !== "heartbeat");
 
   return (
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Agentic social studio</span>
           <h1>Agency Heartbeat</h1>
         </div>
       </header>
@@ -975,25 +1143,25 @@ function HeartbeatDashboard({
 
       <section className="priority-board" aria-label="Priority review queue">
         <article className="review-command">
-          <span>Review queue</span>
-          <strong>{reviewRuns.length}</strong>
-          <p>{primaryReview ? primaryReview.title : "Clear."}</p>
+          <span>Next operator action</span>
+          <strong>{operatorStage ? operatorStage.label : "Ready"}</strong>
+          <p>{operatorStage ? operatorStage.detail : primaryReview ? primaryReview.title : "Studio ready."}</p>
           <div className="review-command-actions">
-            <button className="primary-action" type="button" onClick={() => navigate(primaryReview ? `/runs/${primaryReview.id}` : "/runs")}>
-              {primaryReview ? "Open review gate" : "Open timeline"}
+            <button className="primary-action" type="button" onClick={() => navigate(operatorStage?.primaryActionPath ?? (primaryReview ? `/runs/${primaryReview.id}` : "/runs"))}>
+              {operatorStage?.primaryActionLabel ?? (primaryReview ? "Open review gate" : "Open timeline")}
             </button>
-            <button type="button" onClick={() => navigate("/assets")}>Open library</button>
+            <button type="button" onClick={() => navigate("/runs")}>Open timeline</button>
           </div>
         </article>
 
         <article className="dispatch-board">
-          <span>Dispatch</span>
+          <span>Operator cycle</span>
           <div className="dispatch-actions">
             {dispatchActions.map((action) => (
-              <button key={action.label} type="button" onClick={() => navigate(action.path)}>
-                <strong>{action.value}</strong>
+              <button key={action.id} type="button" onClick={() => navigate(action.primaryActionPath)}>
+                <strong>{action.count}</strong>
                 <span>{action.label}</span>
-                <small>{action.detail}</small>
+                <small>{action.status}</small>
               </button>
             ))}
           </div>
@@ -1558,7 +1726,7 @@ function CharactersPage({
   const [summary, setSummary] = useState("");
   const [query, setQuery] = useState("");
   const [statusFilter, setStatusFilter] = useState("all");
-  const [selectedCharacterId, setSelectedCharacterId] = useState("");
+  const [selectedCharacterId, setSelectedCharacterId] = useState(() => readCharacterRouteState().selected);
   const [formError, setFormError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
@@ -1605,7 +1773,9 @@ function CharactersPage({
     if (selectedCharacterId && data.characters.some((character) => character.id === selectedCharacterId)) {
       return;
     }
-    setSelectedCharacterId(data.characters[0]?.id ?? "");
+    const fallbackId = data.characters[0]?.id ?? "";
+    setSelectedCharacterId(fallbackId);
+    replaceRouteQuery("/characters", { selected: fallbackId || null });
   }, [data.characters, selectedCharacterId]);
 
   useEffect(() => {
@@ -1613,6 +1783,7 @@ function CharactersPage({
       return;
     }
     setSelectedCharacterId(filteredCharacters[0].id);
+    replaceRouteQuery("/characters", { selected: filteredCharacters[0].id });
   }, [filteredCharacters, selectedCharacterId]);
 
   async function createCharacter() {
@@ -1643,6 +1814,7 @@ function CharactersPage({
 
       {loading && <div className="notice">Loading characters.</div>}
       {error && <div className="notice error">{error}</div>}
+      <StageHandoff data={data} stageId="birth" navigate={navigate} />
 
       <section className="roster-command roster-command--casting" aria-label="Character roster command">
         <article>
@@ -1702,7 +1874,10 @@ function CharactersPage({
                     className={`character-card${selected ? " is-selected" : ""}`}
                     key={character.id}
                     type="button"
-                    onClick={() => setSelectedCharacterId(character.id)}
+                    onClick={() => {
+                      setSelectedCharacterId(character.id);
+                      replaceRouteQuery("/characters", { selected: character.id });
+                    }}
                   >
                     <div className="thumb">{modelInitials(character.name)}</div>
                     <div>
@@ -1790,7 +1965,7 @@ function CharactersPage({
   );
 }
 
-function CharacterProfilePage({ characterId, navigate }: { characterId: string; navigate: (path: string) => void }) {
+function CharacterProfilePage({ characterId, data, navigate }: { characterId: string; data: AppData; navigate: (path: string) => void }) {
   const [character, setCharacter] = useState<CharacterDetail | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
@@ -1804,6 +1979,7 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
   const [voiceBody, setVoiceBody] = useState("");
   const [personaPlatform, setPersonaPlatform] = useState("Instagram");
   const [personaBody, setPersonaBody] = useState("");
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
 
   async function load() {
     try {
@@ -1841,6 +2017,15 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
     }
   }
 
+  async function submitAction<T>(actionKey: string, path: string, body: unknown, success: string) {
+    setPendingAction(actionKey);
+    try {
+      await submit<T>(path, body, success);
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
   async function uploadReference(event: React.ChangeEvent<HTMLInputElement>) {
     const file = event.target.files?.[0];
     if (!file) {
@@ -1870,7 +2055,7 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
       setError("Constitution proposal approval requires a change reason.");
       return;
     }
-    await submit(`/api/identity-proposals/${proposal.id}/review`, {
+    await submitAction(`proposal:${proposal.id}:${status}`, `/api/identity-proposals/${proposal.id}/review`, {
       status,
       constitutionChangeReason: proposal.kind === "constitution_patch" ? constitutionReason : undefined
     }, `Proposal ${status}.`);
@@ -1900,6 +2085,15 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
     { label: "Canon", value: approvedCanon, detail: `${character.canon.length} total` },
     { label: "Signals", value: character.feedback.length + character.reflections.length, detail: `${pendingProposals} pending` }
   ];
+  const referenceStatusOptions = [
+    { value: "approved", label: "Approved", detail: "Use as profile source" },
+    { value: "experimental", label: "Experimental", detail: "Keep in testing" },
+    { value: "rejected", label: "Rejected", detail: "Remove from canon" }
+  ];
+  const reviewStatusOptions = [
+    { value: "approved", label: "Approve", detail: "Accept this item" },
+    { value: "rejected", label: "Reject", detail: "Decline this item" }
+  ];
 
   return (
     <>
@@ -1908,13 +2102,12 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
           <button className="text-button" type="button" onClick={() => navigate("/characters")}>
             Back to characters
           </button>
-          <span className="eyebrow">Identity profile</span>
-          <h1>{displayName}</h1>
         </div>
       </header>
 
       {error && <div className="notice error">{error}</div>}
       {message && <div className="notice">{message}</div>}
+      <StageHandoff data={data} stageId={pendingProposals ? "feedback" : "birth"} navigate={navigate} />
 
       <section className="character-dossier-shell" aria-label="Character dossier">
         <aside className="model-dossier-panel">
@@ -2004,10 +2197,13 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
                       <small>{displayCopy(proposal.rationale)}</small>
                       <p>{displayCopy(proposal.body)}</p>
                       {proposal.status === "proposed" && (
-                        <div className="inline-actions">
-                          <button type="button" onClick={() => reviewProposal(proposal, "approved")}>Approve</button>
-                          <button type="button" onClick={() => reviewProposal(proposal, "rejected")}>Reject</button>
-                        </div>
+                        <StatusChoiceGroup
+                          currentStatus={proposal.status}
+                          label={`${proposal.kind} review status`}
+                          options={reviewStatusOptions}
+                          pendingValue={pendingAction?.startsWith(`proposal:${proposal.id}:`) ? pendingAction.split(":").at(-1) ?? null : null}
+                          onSelect={(status) => reviewProposal(proposal, status as "approved" | "rejected")}
+                        />
                       )}
                     </div>
                   ))}
@@ -2049,19 +2245,15 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
                         <strong>{item.original_name}</strong>
                         <small>{item.status.replaceAll("_", " ")} · {formatBytes(item.size_bytes)}</small>
                       </span>
-                      <div className="inline-actions">
-                        {["approved", "experimental", "rejected"].map((status) => (
-                          <button
-                            key={status}
-                            type="button"
-                            onClick={() =>
-                              submit(`/api/characters/${characterId}/reference-images/${item.id}/status`, { status }, `Reference marked ${status}.`)
-                            }
-                          >
-                            {status}
-                          </button>
-                        ))}
-                      </div>
+                      <StatusChoiceGroup
+                        currentStatus={item.status}
+                        label={`${item.original_name} reference status`}
+                        options={referenceStatusOptions}
+                        pendingValue={pendingAction?.startsWith(`reference:${item.id}:`) ? pendingAction.split(":").at(-1) ?? null : null}
+                        onSelect={(status) =>
+                          submitAction(`reference:${item.id}:${status}`, `/api/characters/${characterId}/reference-images/${item.id}/status`, { status }, `Reference marked ${status}.`)
+                        }
+                      />
                     </div>
                   ))}
                 </div>
@@ -2124,10 +2316,15 @@ function CharacterProfilePage({ characterId, navigate }: { characterId: string; 
                     <div key={item.id}>
                       <strong>{item.title} · {item.status}</strong>
                       <small>{item.body}</small>
-                      <div className="inline-actions">
-                        <button type="button" onClick={() => submit(`/api/characters/${characterId}/canon/${item.id}/status`, { status: "approved" }, "Canon approved.")}>Approve</button>
-                        <button type="button" onClick={() => submit(`/api/characters/${characterId}/canon/${item.id}/status`, { status: "rejected" }, "Canon rejected.")}>Reject</button>
-                      </div>
+                      <StatusChoiceGroup
+                        currentStatus={item.status}
+                        label={`${item.title} canon status`}
+                        options={reviewStatusOptions}
+                        pendingValue={pendingAction?.startsWith(`canon:${item.id}:`) ? pendingAction.split(":").at(-1) ?? null : null}
+                        onSelect={(status) =>
+                          submitAction(`canon:${item.id}:${status}`, `/api/characters/${characterId}/canon/${item.id}/status`, { status }, `Canon ${status}.`)
+                        }
+                      />
                     </div>
                   ))}
                 </div>
@@ -2430,9 +2627,10 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
 }
 
 function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
-  const [characterId, setCharacterId] = useState("");
-  const [statusFilter, setStatusFilter] = useState("");
-  const [platformFit, setPlatformFit] = useState("");
+  const [characterId, setCharacterId] = useState(() => readAssetRouteState().characterId);
+  const [statusFilter, setStatusFilter] = useState(() => readAssetRouteState().status);
+  const [platformFit, setPlatformFit] = useState(() => readAssetRouteState().platformFit);
+  const [assetQuery, setAssetQuery] = useState("");
   const [assets, setAssets] = useState<ImageAsset[]>([]);
   const [selectedAssetId, setSelectedAssetId] = useState("");
   const [selectedAnalyses, setSelectedAnalyses] = useState<AssetAnalysis[]>([]);
@@ -2445,12 +2643,24 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [generatingImage, setGeneratingImage] = useState(false);
+  const [assetReviewPending, setAssetReviewPending] = useState<string | null>(null);
 
-  function filterAssetsForView(items: ImageAsset[], nextStatus = statusFilter, nextPlatform = platformFit) {
+  function filterAssetsForView(items: ImageAsset[], nextStatus = statusFilter, nextPlatform = platformFit, nextQuery = assetQuery) {
+    const normalizedQuery = nextQuery.trim().toLowerCase();
     return items.filter((asset) => {
       const statusMatches = !nextStatus || asset.status === nextStatus;
       const platformMatches = !nextPlatform || asset.latestAnalysis?.platform_fit.includes(nextPlatform);
-      return statusMatches && platformMatches;
+      const queryMatches =
+        !normalizedQuery ||
+        [
+          asset.status,
+          asset.provider ?? "",
+          asset.original_prompt,
+          asset.latestAnalysis?.identity_match ?? "",
+          asset.latestAnalysis?.recommended_action ?? "",
+          asset.latestAnalysis?.platform_fit.join(" ") ?? ""
+        ].some((value) => String(value ?? "").toLowerCase().includes(normalizedQuery));
+      return statusMatches && platformMatches && queryMatches;
     });
   }
 
@@ -2469,17 +2679,18 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     { label: "Selected", value: selectedAsset ? assetStatusLabel(selectedAsset.status) : "None", detail: selectedAsset?.provider ?? providerOverride }
   ];
 
-  async function loadAssets(next: { characterId?: string; status?: string; platformFit?: string } = {}) {
+  async function loadAssets(next: { characterId?: string; status?: string; platformFit?: string; query?: string } = {}) {
     const params = new URLSearchParams();
     const nextCharacterId = next.characterId ?? characterId;
     const nextStatus = next.status ?? statusFilter;
     const nextPlatform = next.platformFit ?? platformFit;
+    const nextQuery = next.query ?? assetQuery;
     if (nextCharacterId) params.set("characterId", nextCharacterId);
     const response = await fetch(`${apiBaseUrl()}/api/assets${params.size ? `?${params}` : ""}`);
     if (!response.ok) throw new Error("Unable to load assets.");
     const payload = (await response.json()) as { assets: ImageAsset[] };
     setAssets(payload.assets);
-    const nextVisibleAssets = filterAssetsForView(payload.assets, nextStatus, nextPlatform);
+    const nextVisibleAssets = filterAssetsForView(payload.assets, nextStatus, nextPlatform, nextQuery);
     setSelectedAssetId((current) => (nextVisibleAssets.some((asset) => asset.id === current) ? current : nextVisibleAssets[0]?.id ?? ""));
   }
 
@@ -2515,6 +2726,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
 
   async function changeCharacter(nextCharacterId: string) {
     setCharacterId(nextCharacterId);
+    replaceRouteQuery("/assets", { characterId: nextCharacterId || null });
     setError(null);
     try {
       await Promise.all([loadAssets({ characterId: nextCharacterId }), loadRecipes(nextCharacterId)]);
@@ -2526,9 +2738,31 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
   function applyFilters(nextStatus = statusFilter, nextPlatform = platformFit) {
     setStatusFilter(nextStatus);
     setPlatformFit(nextPlatform);
+    replaceRouteQuery("/assets", { status: nextStatus || null, platformFit: nextPlatform || null });
     setError(null);
     const nextVisibleAssets = filterAssetsForView(assets, nextStatus, nextPlatform);
     setSelectedAssetId((current) => (nextVisibleAssets.some((asset) => asset.id === current) ? current : nextVisibleAssets[0]?.id ?? ""));
+  }
+
+  function applyAssetSearch(nextQuery: string) {
+    setAssetQuery(nextQuery);
+    setError(null);
+    const nextVisibleAssets = filterAssetsForView(assets, statusFilter, platformFit, nextQuery);
+    setSelectedAssetId((current) => (nextVisibleAssets.some((asset) => asset.id === current) ? current : nextVisibleAssets[0]?.id ?? ""));
+  }
+
+  async function clearAssetFilters() {
+    setCharacterId("");
+    setStatusFilter("");
+    setPlatformFit("");
+    setAssetQuery("");
+    setError(null);
+    replaceRouteQuery("/assets", { characterId: null, status: null, platformFit: null });
+    try {
+      await loadAssets({ characterId: "", status: "", platformFit: "", query: "" });
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to clear filters.");
+    }
   }
 
   async function generateImage() {
@@ -2543,10 +2777,12 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
         contentTierOverride: contentTierOverride || undefined
       });
       setMessage(`Image generation ${payload.run.status}. ${payload.asset ? "Asset stored locally." : "Check Runs for provider details."}`);
-      await loadAssets();
+      await loadAssets({ status: "", platformFit: "", query: "" });
       if (payload.asset) {
         setStatusFilter("");
         setPlatformFit("");
+        setAssetQuery("");
+        replaceRouteQuery("/assets", { status: null, platformFit: null });
         setSelectedAssetId(payload.asset.id);
       }
     } catch (caught) {
@@ -2570,6 +2806,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
 
   async function reviewAsset(assetId: string, status: string) {
     setError(null); setMessage(null);
+    setAssetReviewPending(status);
     try {
       await postJson(`/api/assets/${assetId}/review`, { status, reason: reviewReason || "Manual review from Asset Library." });
       setMessage(`Asset marked ${status}.`);
@@ -2577,6 +2814,8 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
       await loadSelectedDetail(assetId);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to review asset.");
+    } finally {
+      setAssetReviewPending(null);
     }
   }
 
@@ -2614,17 +2853,18 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     { label: "Published", status: "published", count: assets.filter((asset) => asset.status === "published").length }
   ];
   const assetRecipeLabel = (recipe: PromptRecipe) => `${formatDate(recipe.created_at)} · ${compactInlineText(recipe.final_prompt, 48) || recipe.id.replace("prompt_recipe_", "recipe ")}`;
+  const activeFilterCount = [characterId, statusFilter, platformFit, assetQuery.trim()].filter(Boolean).length;
 
   return (
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Generation floor</span>
           <h1>Library</h1>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
+      <StageHandoff data={data} stageId="production" navigate={navigate} />
       <section className="asset-command" aria-label="Asset command">
         <article className="asset-hero">
           <span>Route</span>
@@ -2656,8 +2896,13 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
       </section>
       <section className="asset-workbench">
         <article className="settings-preview asset-controls">
-          <div className="section-heading"><h2>Filters</h2></div>
-          <div className="form-stack">
+          <div className="asset-filter-heading">
+            <h2>Archive controls</h2>
+            <span>{activeFilterCount ? `${activeFilterCount} active` : "All assets"}</span>
+            <button type="button" onClick={() => { void clearAssetFilters(); }} disabled={!activeFilterCount}>Reset</button>
+          </div>
+          <div className="form-stack asset-filter-grid">
+            <label>Search<input type="search" value={assetQuery} onChange={(event) => applyAssetSearch(event.target.value)} placeholder="Prompt, provider, status" /></label>
             <label>Character<select value={characterId} onChange={(event) => changeCharacter(event.target.value)}><option value="">All characters</option>{data.characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
             <label>Status<select value={statusFilter} onChange={(event) => applyFilters(event.target.value, platformFit)}>{assetStatusOptions.map((item) => <option key={item} value={item}>{item ? item.replaceAll("_", " ") : "All states"}</option>)}</select></label>
             <label>Platform fit<select value={platformFit} onChange={(event) => applyFilters(statusFilter, event.target.value)}>{platformOptions.map((item) => <option key={item} value={item}>{item || "Any platform"}</option>)}</select></label>
@@ -2723,17 +2968,19 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
                 <button className={!selectedAnalysis ? "primary-action" : ""} type="button" onClick={() => analyzeAsset(selectedAsset.id)}>
                   {selectedAnalysis ? "Re-analyze" : "Analyze"}
                 </button>
-                <button className={selectedAnalysis ? "primary-action" : ""} type="button" onClick={() => reviewAsset(selectedAsset.id, "approved_post_asset")}>Approve post asset</button>
-                <button type="button" onClick={() => createDraftFromAsset(selectedAsset.id)} disabled={selectedAsset.status !== "approved_post_asset"}>Create draft</button>
+                <button className={selectedAnalysis ? "primary-action" : ""} type="button" onClick={() => reviewAsset(selectedAsset.id, "approved_post_asset")} disabled={Boolean(assetReviewPending)} aria-busy={assetReviewPending === "approved_post_asset"}>
+                  {assetReviewPending === "approved_post_asset" ? "Approving" : selectedAsset.status === "approved_post_asset" ? "Approved post asset" : "Approve post asset"}
+                </button>
+                <button type="button" onClick={() => createDraftFromAsset(selectedAsset.id)} disabled={selectedAsset.status !== "approved_post_asset" || Boolean(assetReviewPending)}>Create draft</button>
                 <button type="button" onClick={() => regenerateAsset(selectedAsset.id)} disabled={!selectedAsset.prompt_recipe_id}>Regenerate</button>
               </div>
               <details className="editor-drawer asset-decision-drawer">
                 <summary>Decision note and alternates</summary>
                 <label>Review reason<textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Optional review note" /></label>
                 <div className="button-stack">
-                  <button type="button" onClick={() => reviewAsset(selectedAsset.id, "approved_reference")}>Approve reference</button>
-                  <button type="button" onClick={() => reviewAsset(selectedAsset.id, "rejected_identity_drift")}>Reject identity drift</button>
-                  <button type="button" onClick={() => reviewAsset(selectedAsset.id, "rejected_quality")}>Reject quality</button>
+                  <button type="button" onClick={() => reviewAsset(selectedAsset.id, "approved_reference")} disabled={Boolean(assetReviewPending)} aria-busy={assetReviewPending === "approved_reference"}>{assetReviewPending === "approved_reference" ? "Approving" : "Approve reference"}</button>
+                  <button type="button" onClick={() => reviewAsset(selectedAsset.id, "rejected_identity_drift")} disabled={Boolean(assetReviewPending)} aria-busy={assetReviewPending === "rejected_identity_drift"}>{assetReviewPending === "rejected_identity_drift" ? "Rejecting" : "Reject identity drift"}</button>
+                  <button type="button" onClick={() => reviewAsset(selectedAsset.id, "rejected_quality")} disabled={Boolean(assetReviewPending)} aria-busy={assetReviewPending === "rejected_quality"}>{assetReviewPending === "rejected_quality" ? "Rejecting" : "Reject quality"}</button>
                 </div>
               </details>
               <details className="raw-details">
@@ -2750,7 +2997,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
 }
 
 function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
-  const [status, setStatus] = useState("");
+  const [status, setStatus] = useState(() => readDraftRouteState().status);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [allDrafts, setAllDrafts] = useState<Draft[]>([]);
   const [selectedDraftId, setSelectedDraftId] = useState("");
@@ -2769,6 +3016,7 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   const [publishNotes, setPublishNotes] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [draftActionPending, setDraftActionPending] = useState<string | null>(null);
   const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? drafts[0] ?? null;
   const selectedVariant = selectedDraft?.variants?.find((variant) => variant.platform === selectedPlatform) ?? selectedDraft?.variants?.[0] ?? null;
   const variantDirty = Boolean(
@@ -2857,30 +3105,37 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   async function reviewDraft(statusValue: string) {
     if (!selectedDraft) return;
     setError(null); setMessage(null);
+    setDraftActionPending(statusValue);
     try {
       await patchJson(`/api/drafts/${selectedDraft.id}`, { status: statusValue, reason: "Manual Draft Review Desk action." });
       setMessage(`Draft marked ${statusValue}.`);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to review draft.");
+    } finally {
+      setDraftActionPending(null);
     }
   }
 
   async function exportDraft() {
     if (!selectedDraft) return;
     setError(null); setMessage(null);
+    setDraftActionPending("export");
     try {
       await postJson<{ package: PublishingPackage }>(`/api/drafts/${selectedDraft.id}/export`, {});
       setMessage("Export package created.");
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to export draft.");
+    } finally {
+      setDraftActionPending(null);
     }
   }
 
   async function publishDraft() {
     if (!selectedDraft || !selectedVariant) return;
     setError(null); setMessage(null);
+    setDraftActionPending("publish");
     try {
       await postJson(`/api/drafts/${selectedDraft.id}/publish`, {
         platform: selectedVariant.platform,
@@ -2893,6 +3148,8 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to mark published.");
+    } finally {
+      setDraftActionPending(null);
     }
   }
 
@@ -2905,6 +3162,13 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
     value,
     count: allDrafts.filter((draft) => draft.status === value).length
   }));
+  const reviewSummary = data.workflowSummary.find((stage) => stage.id === "review");
+  const runReviewCount = data.runs.filter((run) => run.status === "needs_review").length;
+  const reviewQueues = [
+    { label: "Drafts", count: allDrafts.filter((draft) => draft.status === "needs_review").length, detail: "copy and package decisions", path: "/drafts?status=needs_review" },
+    { label: "Runs", count: runReviewCount, detail: "automation gates", path: "/runs?status=needs_review" },
+    { label: "Identity", count: Math.max((reviewSummary?.count ?? 0) - runReviewCount - allDrafts.filter((draft) => draft.status === "needs_review").length, 0), detail: "proposal review", path: "/characters" }
+  ];
   const publishEvent = selectedDraft?.publishingEvents?.find((event) => event.published_at || event.status === "published");
   const hasExport = Boolean(selectedDraft?.packages?.length);
   const draftStage = selectedDraft?.status ?? "";
@@ -2949,9 +3213,19 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
 
   return (
     <>
-      <header className="topbar page-heading"><div><span className="eyebrow">Approval desk</span><h1>Review Desk</h1></div></header>
+      <header className="topbar page-heading"><div><h1>Review Desk</h1></div></header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
+      <StageHandoff data={data} stageId="review" navigate={navigate} />
+      <section className="review-queue-overview" aria-label="Unified review gates">
+        {reviewQueues.map((queue) => (
+          <button key={queue.label} type="button" onClick={() => navigate(queue.path)}>
+            <span>{queue.label}</span>
+            <strong>{queue.count}</strong>
+            <small>{queue.detail}</small>
+          </button>
+        ))}
+      </section>
       <section className="approval-cockpit" aria-label="Draft approval cockpit">
         <article className="review-command review-command-compact">
           <span>Selected draft</span>
@@ -2969,12 +3243,12 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
         </article>
       </section>
       <section className="status-lane" aria-label="Draft status filters">
-        <button className={!status ? "active" : ""} type="button" onClick={() => { setStatus(""); load("").catch(() => undefined); }}>
+        <button className={!status ? "active" : ""} type="button" onClick={() => { setStatus(""); replaceRouteQuery("/drafts", { status: null }); load("").catch(() => undefined); }}>
           <strong>{allDrafts.length}</strong>
           <span>All drafts</span>
         </button>
         {draftCounts.map((item) => (
-          <button className={status === item.value ? "active" : ""} key={item.value} type="button" onClick={() => { setStatus(item.value); load(item.value).catch(() => undefined); }}>
+          <button className={status === item.value ? "active" : ""} key={item.value} type="button" onClick={() => { setStatus(item.value); replaceRouteQuery("/drafts", { status: item.value }); load(item.value).catch(() => undefined); }}>
             <strong>{item.count}</strong>
             <span>{item.value.replaceAll("_", " ")}</span>
           </button>
@@ -3000,18 +3274,18 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
               <div className="draft-primary-actions" aria-label={stageActionLabel}>
                 {canReviewDraft && (
                   <>
-                    <button className="primary-action" type="button" onClick={() => reviewDraft("approved")}>Approve</button>
-                    <button type="button" onClick={() => reviewDraft("rejected")}>Reject draft</button>
+                    <button className="primary-action" type="button" onClick={() => reviewDraft("approved")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "approved"}>{draftActionPending === "approved" ? "Approving" : "Approve"}</button>
+                    <button type="button" onClick={() => reviewDraft("rejected")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "rejected"}>{draftActionPending === "rejected" ? "Rejecting" : "Reject draft"}</button>
                   </>
                 )}
                 {canExportDraft && (
                   <>
-                    <button className="primary-action" type="button" onClick={exportDraft}>Export package</button>
-                    <button type="button" onClick={() => reviewDraft("rejected")}>Reject draft</button>
+                    <button className="primary-action" type="button" onClick={exportDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "export"}>{draftActionPending === "export" ? "Exporting" : "Export package"}</button>
+                    <button type="button" onClick={() => reviewDraft("rejected")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "rejected"}>{draftActionPending === "rejected" ? "Rejecting" : "Reject draft"}</button>
                   </>
                 )}
                 {canPublishDraft && !publishEvent && (
-                  <button className="primary-action" type="button" onClick={publishDraft}>Mark published</button>
+                  <button className="primary-action" type="button" onClick={publishDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "publish"}>{draftActionPending === "publish" ? "Publishing" : "Mark published"}</button>
                 )}
                 {publishEvent && <button type="button" onClick={() => navigate("/calendar")}>Open ledger</button>}
               </div>
@@ -3043,7 +3317,7 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
                 <div className="form-stack">
                   <label>Live URL<input value={publishUrl} onChange={(event) => setPublishUrl(event.target.value)} placeholder="https://..." /></label>
                   <label>Publishing notes<input value={publishNotes} onChange={(event) => setPublishNotes(event.target.value)} /></label>
-                  <button type="button" onClick={publishDraft}>Mark published</button>
+                  <button type="button" onClick={publishDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "publish"}>{draftActionPending === "publish" ? "Publishing" : "Mark published"}</button>
                 </div>
                 {selectedDraft.packages && selectedDraft.packages.length > 0 && <div className="compact-list"><div><strong>Latest export</strong><small>{selectedDraft.packages[0].files.join(", ")}</small></div></div>}
               </details>
@@ -3055,14 +3329,14 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   );
 }
 
-function CalendarLedgerPage({ navigate }: { navigate: (path: string) => void }) {
+function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
   const [events, setEvents] = useState<PublishingEvent[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState("");
   const [latestFeedbackId, setLatestFeedbackId] = useState("");
-  const [selectedBucket, setSelectedBucket] = useState("all");
+  const [selectedBucket, setSelectedBucket] = useState(() => readCalendarRouteState().bucket);
   const [feedbackForm, setFeedbackForm] = useState({
     impressions: "1200",
     reach: "900",
@@ -3214,11 +3488,23 @@ function CalendarLedgerPage({ navigate }: { navigate: (path: string) => void }) 
       <header className="topbar page-heading calendar-topbar">
         <div>
           <h1>Publishing Desk</h1>
-          <p>Run control, publishing ledger, and review.</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
+      <StageHandoff data={data} stageId="publishing" navigate={navigate} />
+      <section className="status-lane publishing-bucket-lane" aria-label="Publishing buckets">
+        <button className={selectedBucket === "all" ? "active" : ""} type="button" onClick={() => { setSelectedBucket("all"); replaceRouteQuery("/calendar", { bucket: null }); }}>
+          <strong>{events.length}</strong>
+          <span>All events</span>
+        </button>
+        {statusColumns.map((bucket) => (
+          <button className={selectedBucket === bucket ? "active" : ""} key={bucket} type="button" onClick={() => { setSelectedBucket(bucket); replaceRouteQuery("/calendar", { bucket }); }}>
+            <strong>{matchingEventsForBucket(bucket).length}</strong>
+            <span>{statusColumnLabels[bucket]}</span>
+          </button>
+        ))}
+      </section>
       <section className="calendar-agency-layout">
         <div className="calendar-main-column">
           <section className="publishing-desk" aria-label="Publishing control desk">
@@ -3385,11 +3671,193 @@ function CalendarLedgerPage({ navigate }: { navigate: (path: string) => void }) 
                 <button className="primary-action" type="button" onClick={canLogResponse ? submitFeedback : () => navigate("/drafts")} disabled={!selectedEvent.id}>
                   {canLogResponse ? "Log response" : "Open review"}
                 </button>
+                {canLogResponse && <button type="button" onClick={() => navigate(`/feedback?eventId=${selectedEvent.id}`)}>Open feedback</button>}
                 <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Run reflection</button>
               </div>
             </div>
           )}
         </aside>
+      </section>
+    </>
+  );
+}
+
+function FeedbackPage({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
+  const [events, setEvents] = useState<PublishingEvent[]>([]);
+  const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [selectedEventId, setSelectedEventId] = useState(() => readFeedbackRouteState().eventId);
+  const [latestFeedbackId, setLatestFeedbackId] = useState("");
+  const [message, setMessage] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const [feedbackForm, setFeedbackForm] = useState({
+    impressions: "1200",
+    reach: "900",
+    likes: "80",
+    comments: "12",
+    shares: "7",
+    saves: "18",
+    profileVisits: "20",
+    followsGained: "4",
+    qualitativeNotes: "Audience response stayed aligned with the character premise.",
+    topComments: "Consistent, useful, and visually clear.",
+    operatorJudgment: "Repeat this direction with tighter variation."
+  });
+
+  useEffect(() => {
+    Promise.all([fetch(`${apiBaseUrl()}/api/publishing-events`), fetch(`${apiBaseUrl()}/api/drafts`)])
+      .then(async ([eventResponse, draftResponse]) => {
+        if (!eventResponse.ok || !draftResponse.ok) throw new Error("Unable to load feedback desk.");
+        const eventPayload = (await eventResponse.json()) as { events: PublishingEvent[] };
+        const draftPayload = (await draftResponse.json()) as { drafts: Draft[] };
+        return { events: eventPayload.events, drafts: draftPayload.drafts };
+      })
+      .then((payload) => {
+        setEvents(payload.events);
+        setDrafts(payload.drafts);
+        const dueEvent = payload.events.find((event) => event.status === "needs_feedback") ?? payload.events.find((event) => event.status === "published" || event.published_at) ?? payload.events[0];
+        setSelectedEventId((current) => current || dueEvent?.id || "");
+      })
+      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load feedback desk."));
+  }, []);
+
+  const updateFeedback = (key: keyof typeof feedbackForm, value: string) => setFeedbackForm({ ...feedbackForm, [key]: value });
+  const feedbackEvents = events.filter((event) => event.status === "needs_feedback" || event.status === "published" || Boolean(event.published_at));
+  const selectedEvent =
+    feedbackEvents.find((event) => event.id === selectedEventId) ??
+    events.find((event) => event.id === selectedEventId) ??
+    feedbackEvents[0] ??
+    null;
+  const selectedDraft = drafts.find((draft) => draft.id === selectedEvent?.draft_id) ?? null;
+  const selectedVariant = selectedDraft?.variants?.find((variant) => variant.platform === selectedEvent?.platform) ?? selectedDraft?.variants?.[0] ?? null;
+  const selectedAsset = selectedDraft?.asset ?? null;
+  const selectedCharacter = data.characters.find((character) => character.id === selectedDraft?.character_id) ?? null;
+  const metricTotal = selectedEvent
+    ? Number(feedbackForm.likes) + Number(feedbackForm.comments) + Number(feedbackForm.shares) + Number(feedbackForm.saves)
+    : 0;
+
+  function chooseEvent(eventId: string) {
+    setSelectedEventId(eventId);
+    replaceRouteQuery("/feedback", { eventId });
+  }
+
+  async function submitFeedback() {
+    if (!selectedEvent) return;
+    setError(null);
+    setMessage(null);
+    try {
+      const payload = await postJson<{ feedback: SocialFeedback }>(`/api/publishing-events/${selectedEvent.id}/feedback`, {
+        impressions: Number(feedbackForm.impressions),
+        reach: Number(feedbackForm.reach),
+        likes: Number(feedbackForm.likes),
+        comments: Number(feedbackForm.comments),
+        shares: Number(feedbackForm.shares),
+        saves: Number(feedbackForm.saves),
+        profileVisits: Number(feedbackForm.profileVisits),
+        followsGained: Number(feedbackForm.followsGained),
+        qualitativeNotes: feedbackForm.qualitativeNotes,
+        topComments: feedbackForm.topComments,
+        operatorJudgment: feedbackForm.operatorJudgment
+      });
+      setLatestFeedbackId(payload.feedback.id);
+      setMessage("Feedback logged. Reflection is ready.");
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to log feedback.");
+    }
+  }
+
+  async function runReflection() {
+    if (!latestFeedbackId) return;
+    setError(null);
+    setMessage(null);
+    try {
+      const payload = await postJson<{ run: RunSummary }>(`/api/feedback/${latestFeedbackId}/reflection-run`, {});
+      navigate(`/runs/${payload.run.id}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to run reflection.");
+    }
+  }
+
+  return (
+    <>
+      <header className="topbar page-heading">
+        <div>
+          <h1>Feedback</h1>
+        </div>
+      </header>
+      {message && <div className="notice">{message}</div>}
+      {error && <div className="notice error">{error}</div>}
+      <StageHandoff data={data} stageId="feedback" navigate={navigate} />
+      <section className="feedback-command" aria-label="Feedback command">
+        <article>
+          <span>Response due</span>
+          <strong>{feedbackEvents.length}</strong>
+          <p>{selectedEvent ? `${platformLabel(selectedEvent.platform)} · ${selectedEvent.status.replaceAll("_", " ")}` : "No published event yet"}</p>
+        </article>
+        <article>
+          <span>Engagement</span>
+          <strong>{metricTotal}</strong>
+          <p>likes, comments, shares, saves</p>
+        </article>
+        <article>
+          <span>Identity loop</span>
+          <strong>{selectedCharacter ? displayModelName(selectedCharacter.name) : "Waiting"}</strong>
+          <p>{latestFeedbackId ? "Reflection ready" : "Log response first"}</p>
+        </article>
+      </section>
+      <section className="feedback-workbench">
+        <article className="settings-preview feedback-queue">
+          <div className="section-heading"><h2>Published events</h2><span>{feedbackEvents.length}</span></div>
+          {feedbackEvents.length === 0 ? (
+            <EmptyState title="No published posts" body="Publish a draft from the Publishing Desk before logging feedback." />
+          ) : (
+            <div className="compact-list">
+              {feedbackEvents.map((event) => (
+                <button className={`run-row${selectedEvent?.id === event.id ? " selected" : ""}`} key={event.id} type="button" onClick={() => chooseEvent(event.id)}>
+                  <span>
+                    <strong>{platformLabel(event.platform)} · {event.status.replaceAll("_", " ")}</strong>
+                    <small>{formatDate(event.published_at ?? event.created_at)}</small>
+                  </span>
+                  <em className={statusClass(event.status)}>{event.status.replaceAll("_", " ")}</em>
+                </button>
+              ))}
+            </div>
+          )}
+        </article>
+        <article className="settings-preview feedback-dossier">
+          <div className="section-heading"><h2>Response log</h2></div>
+          {!selectedEvent ? (
+            <EmptyState title="No event selected" body="Open Publishing and mark a draft published first." />
+          ) : (
+            <div className="asset-detail">
+              {selectedAsset?.id && <img src={`${apiBaseUrl()}/api/assets/${selectedAsset.id}/file`} alt={selectedVariant?.alt_text ?? selectedDraft?.title ?? "Published asset"} />}
+              <div className="score-row">
+                <span className={statusClass(selectedEvent.status)}>{selectedEvent.status.replaceAll("_", " ")}</span>
+                <span>{selectedCharacter ? displayModelName(selectedCharacter.name) : "Unknown character"}</span>
+              </div>
+              <p className="action-copy">{selectedVariant?.caption ?? selectedEvent.notes ?? "No caption recorded."}</p>
+              <div className="metric-grid">
+                <label>Impressions<input type="number" value={feedbackForm.impressions} onChange={(event) => updateFeedback("impressions", event.target.value)} /></label>
+                <label>Reach<input type="number" value={feedbackForm.reach} onChange={(event) => updateFeedback("reach", event.target.value)} /></label>
+                <label>Likes<input type="number" value={feedbackForm.likes} onChange={(event) => updateFeedback("likes", event.target.value)} /></label>
+                <label>Comments<input type="number" value={feedbackForm.comments} onChange={(event) => updateFeedback("comments", event.target.value)} /></label>
+                <label>Shares<input type="number" value={feedbackForm.shares} onChange={(event) => updateFeedback("shares", event.target.value)} /></label>
+                <label>Saves<input type="number" value={feedbackForm.saves} onChange={(event) => updateFeedback("saves", event.target.value)} /></label>
+                <label>Profile visits<input type="number" value={feedbackForm.profileVisits} onChange={(event) => updateFeedback("profileVisits", event.target.value)} /></label>
+                <label>Follows<input type="number" value={feedbackForm.followsGained} onChange={(event) => updateFeedback("followsGained", event.target.value)} /></label>
+              </div>
+              <div className="form-stack">
+                <label>Qualitative notes<textarea value={feedbackForm.qualitativeNotes} onChange={(event) => updateFeedback("qualitativeNotes", event.target.value)} /></label>
+                <label>Top comments<textarea value={feedbackForm.topComments} onChange={(event) => updateFeedback("topComments", event.target.value)} /></label>
+                <label>Operator judgment<textarea value={feedbackForm.operatorJudgment} onChange={(event) => updateFeedback("operatorJudgment", event.target.value)} /></label>
+              </div>
+              <div className="draft-primary-actions">
+                <button className="primary-action" type="button" onClick={submitFeedback}>Log feedback</button>
+                <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Run reflection</button>
+                <button type="button" onClick={() => navigate(selectedCharacter ? `/characters/${selectedCharacter.id}` : "/characters")}>Identity proposals</button>
+              </div>
+            </div>
+          )}
+        </article>
       </section>
     </>
   );
@@ -4163,7 +4631,7 @@ export function App() {
       return <CharactersPage data={data} loading={loading} error={error} navigate={navigate} />;
     }
     if (characterDetailMatch) {
-      return <CharacterProfilePage characterId={characterDetailMatch[1]} navigate={navigate} />;
+      return <CharacterProfilePage characterId={characterDetailMatch[1]} data={data} navigate={navigate} />;
     }
     if (path === "/settings") {
       return <SettingsPage navigate={navigate} />;
@@ -4178,7 +4646,10 @@ export function App() {
       return <DraftReviewDesk data={data} navigate={navigate} />;
     }
     if (path === "/calendar") {
-      return <CalendarLedgerPage navigate={navigate} />;
+      return <CalendarLedgerPage data={data} navigate={navigate} />;
+    }
+    if (path === "/feedback") {
+      return <FeedbackPage data={data} navigate={navigate} />;
     }
     const item = navItems.find((navItem) => navItem.path === path);
     return <PlaceholderPage title={item?.label ?? "Not Found"} />;
