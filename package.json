@@ -1,0 +1,28 @@
+{
+  "name": "virtual-agency-studio",
+  "version": "0.1.0",
+  "private": true,
+  "type": "module",
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "dev": "npm-run-all --parallel dev:api dev:web",
+    "dev:api": "npm --workspace @virtual-agency/api run dev",
+    "dev:web": "npm --workspace @virtual-agency/web run dev",
+    "build": "npm --workspace @virtual-agency/shared run build && npm --workspace @virtual-agency/providers run build && npm --workspace @virtual-agency/api run build && npm --workspace @virtual-agency/web run build",
+    "build:packages": "npm --workspace @virtual-agency/shared run build && npm --workspace @virtual-agency/providers run build",
+    "deploy:orangepi": "bash scripts/deploy-orangepi.sh",
+    "smoke:demo": "node scripts/smoke-demo.mjs",
+    "test": "npm run build:packages && npm run test --workspaces --if-present",
+    "typecheck": "npm run build:packages && npm run typecheck --workspaces --if-present",
+    "verify:design": "node scripts/verify-design-system.mjs"
+  },
+  "devDependencies": {
+    "@types/node": "^26.0.0",
+    "npm-run-all": "^4.1.5",
+    "typescript": "^5.9.3",
+    "vitest": "^4.0.15"
+  }
+}

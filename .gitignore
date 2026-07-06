@@ -1,0 +1,13 @@
+node_modules
+dist
+*.tsbuildinfo
+.env
+.impeccable/
+.playwright-cli/
+output/
+data/agency.sqlite
+apps/api/data
+data/assets/*
+data/exports/*
+!data/assets/.gitkeep
+!data/exports/.gitkeep
