@@ -14,6 +14,8 @@ export interface ComfyWorkflowInput {
   negativePromptInput?: string | null;
   seedNode?: string | null;
   seedInput?: string | null;
+  referenceImageNode?: string | null;
+  referenceImageInput?: string | null;
   outputNodeIds?: string[];
   defaultForTiers?: string[];
   status?: string;
@@ -60,6 +62,8 @@ export function normalizeComfyWorkflowInput(value: Record<string, unknown>): Com
     negativePromptInput: typeof value.negativePromptInput === "string" ? value.negativePromptInput.trim() || null : null,
     seedNode: typeof value.seedNode === "string" ? value.seedNode.trim() || null : null,
     seedInput: typeof value.seedInput === "string" ? value.seedInput.trim() || null : null,
+    referenceImageNode: typeof value.referenceImageNode === "string" ? value.referenceImageNode.trim() || null : null,
+    referenceImageInput: typeof value.referenceImageInput === "string" ? value.referenceImageInput.trim() || null : null,
     outputNodeIds: stringList(value.outputNodeIds),
     defaultForTiers: stringList(value.defaultForTiers).filter((tier) => contentTiers.includes(tier as ActivatableContentTier)),
     status: typeof value.status === "string" ? value.status : undefined
@@ -103,7 +107,8 @@ export function validateComfyWorkflowDefinition(input: ComfyWorkflowInput): Work
   const mappedNodes = [
     ["positive prompt", input.positivePromptNode, input.positivePromptInput],
     ["negative prompt", input.negativePromptNode, input.negativePromptInput],
-    ["seed", input.seedNode, input.seedInput]
+    ["seed", input.seedNode, input.seedInput],
+    ["reference image", input.referenceImageNode, input.referenceImageInput]
   ] as const;
   for (const [label, nodeId, inputName] of mappedNodes) {
     if (!nodeId && !inputName) continue;
@@ -140,6 +145,8 @@ export function workflowSummaryToInput(workflow: ComfyWorkflowSummary): ComfyWor
     negativePromptInput: workflow.negative_prompt_input,
     seedNode: workflow.seed_node,
     seedInput: workflow.seed_input,
+    referenceImageNode: workflow.reference_image_node,
+    referenceImageInput: workflow.reference_image_input,
     outputNodeIds: workflow.output_node_ids,
     defaultForTiers: workflow.default_for_tiers,
     status: workflow.status

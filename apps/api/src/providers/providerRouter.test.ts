@@ -3,10 +3,24 @@ import { ProviderGenerationError } from "@virtual-agency/providers";
 import { fallbackReason, routeForPrompt } from "./providerRouter";
 
 describe("provider router", () => {
-  it("routes standard SFW prompts through OpenAI then Comfy fallback", () => {
+  it("routes standard SFW prompts through OpenAI then Comfy fallback when Comfy is not confirmed ready", () => {
     expect(routeForPrompt({ prompt: "Editorial studio portrait in a blazer." })).toMatchObject({
       tier: "sfw_standard",
       providers: ["openai", "comfyui-cloud"],
+      blocked: false,
+      requiresReview: false
+    });
+  });
+
+  it("routes standard SFW prompts through Comfy first when Comfy is ready for identity control", () => {
+    expect(
+      routeForPrompt({
+        prompt: "Editorial studio portrait in a blazer.",
+        providerAvailability: { openai: true, "comfyui-cloud": true }
+      })
+    ).toMatchObject({
+      tier: "sfw_standard",
+      providers: ["comfyui-cloud", "openai"],
       blocked: false,
       requiresReview: false
     });
@@ -25,10 +39,10 @@ describe("provider router", () => {
     });
   });
 
-  it("routes sensitive SFW prompts through OpenAI then Comfy fallback", () => {
-    expect(routeForPrompt({ prompt: "Tasteful swimsuit editorial by a hotel pool." })).toMatchObject({
+  it("routes sensitive SFW prompts through Comfy first when Comfy is ready for identity control", () => {
+    expect(routeForPrompt({ prompt: "Tasteful swimsuit editorial by a hotel pool.", providerAvailability: { "comfyui-cloud": true } })).toMatchObject({
       tier: "sfw_sensitive",
-      providers: ["openai", "comfyui-cloud"],
+      providers: ["comfyui-cloud", "openai"],
       blocked: false
     });
   });

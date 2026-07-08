@@ -11,12 +11,14 @@ import {
   insertAssetAnalysis,
   insertProviderJob,
   listAssetAnalyses,
+  listReferenceImages,
   updateAssetStatus,
   updateProviderJob,
   type AssetSummary
 } from "../db/repositories";
 import {
   getComfyImageGenerationProvider,
+  getActiveComfyWorkflow,
   getImageAnalysisProvider,
   getImageGenerationProvider,
   getOpenAIImageGenerationProvider,
@@ -183,8 +185,14 @@ export async function generateImageFromPromptRecipe(
   runService: RunService,
   promptRecipeId: string,
   promptSuffix = "",
-  routingInput: { providerOverride?: ProviderOverride; overrideReason?: string | null; contentTierOverride?: string | null } = {}
+  routingInput: {
+    providerOverride?: ProviderOverride;
+    overrideReason?: string | null;
+    contentTierOverride?: string | null;
+    referenceImageId?: string | null;
+  } = {}
 ) {
+  const publicApiHost = config.publicApiHost;
   const recipe = getPromptRecipe(db, promptRecipeId);
   if (!recipe) {
     throw new Error(`Prompt recipe not found: ${promptRecipeId}`);
@@ -210,12 +218,66 @@ export async function generateImageFromPromptRecipe(
   const run = runService.createRun({ characterId: recipe.character_id, type: "image_generation", title: "Image Generation" });
   const currentRun = () => getRun(db, run.id) ?? run;
   runService.updateRunStatus(run.id, "running");
-  const request = { prompt, negativePrompt, characterId: recipe.character_id, referenceImageIds: [] };
+  const allReferences = listReferenceImages(db, recipe.character_id);
+  const approvedReferences = allReferences.filter((image) => image.status === "approved");
+  const profileReferenceImage = approvedReferences[0] ?? allReferences[0] ?? null;
+  const requestedReferenceImageId = routingInput.referenceImageId?.trim();
+  const selectedReference = profileReferenceImage;
+  const comfyReferenceImage = approvedReferences[0] ?? null;
+  if (requestedReferenceImageId && requestedReferenceImageId !== profileReferenceImage?.id) {
+    runService.appendRunEvent(
+      run.id,
+      "routing.profile_reference_warning",
+      "Reference image request ignored in favor of character profile source-of-truth.",
+      {
+        requestedReferenceImageId,
+        selectedReferenceImageId: profileReferenceImage?.id ?? null,
+        characterId: recipe.character_id
+      }
+    );
+  }
+  const activeComfyWorkflow = getActiveComfyWorkflow(db, route.tier);
+  const requiresComfyIdentityReference = route.providers.includes("comfyui-cloud") && Boolean(activeComfyWorkflow?.reference_image_node);
+  const identityReferenceImage = requiresComfyIdentityReference ? comfyReferenceImage : selectedReference;
+  const strictIdentityPromptAppend =
+    "IDENTITY LOCK: preserve the same person in this scene using the approved reference image as the face anchor. Keep bone structure, eye shape, nose shape, mouth shape, jawline, and complexion continuity as the same person. Do not reinterpret facial identity.";
+  const strictIdentityNegativeAppend =
+    "different person, changed identity, wrong face, identity swap, face mismatch, incorrect face, non-matching identity";
+  const referenceImages = identityReferenceImage
+    ? [
+        {
+          id: identityReferenceImage.id,
+          path: join(config.dataDir, identityReferenceImage.file_path),
+          originalName: identityReferenceImage.original_name,
+          mimeType: identityReferenceImage.mime_type
+        }
+      ]
+    : [];
+  const request = {
+    prompt: requiresComfyIdentityReference ? `${prompt}\n\n${strictIdentityPromptAppend}` : prompt,
+    negativePrompt: requiresComfyIdentityReference
+      ? [negativePrompt, strictIdentityNegativeAppend].filter(Boolean).join(", ")
+      : negativePrompt,
+    characterId: recipe.character_id,
+    referenceImageSource: "character_profile",
+    referenceImageUrl: identityReferenceImage
+      ? `http://${publicApiHost}:${config.port}/api/characters/${recipe.character_id}/reference-images/${identityReferenceImage.id}/file`
+      : undefined,
+    referenceImageIds: referenceImages.map((image) => image.id),
+    referenceImages
+  };
   runService.appendRunEvent(run.id, "routing.classified", `Image generation routed as ${route.tier}.`, {
     tier: route.tier,
     routeReason: route.routeReason,
     providers: route.providers,
-    promptRecipeId
+    promptRecipeId,
+    referenceImageId: requestedReferenceImageId ?? null,
+    referenceImageSource: "character_profile",
+    referenceImageUrl: request.referenceImageUrl,
+    selectedReferenceImageId: selectedReference?.id ?? null,
+    approvedReferenceCount: approvedReferences.length,
+    comfyReferenceImageId: comfyReferenceImage?.id ?? null,
+    referenceImageIds: request.referenceImageIds
   });
   if (route.overrideApplied) {
     runService.appendRunEvent(run.id, "routing.override_applied", "Operator provider override applied.", {
@@ -228,6 +290,16 @@ export async function generateImageFromPromptRecipe(
     runService.appendRunEvent(run.id, "review.required", "Image generation blocked for human routing review.", { gate: "provider_routing", tier: route.tier });
     runService.updateRunStatus(run.id, "needs_review");
     return { run: currentRun(), error: route.routeReason };
+  }
+  if (requiresComfyIdentityReference && referenceImages.length === 0) {
+    const message = "ComfyUI identity workflow requires an approved character reference image.";
+    runService.appendRunEvent(run.id, "review.required", message, {
+      gate: "identity_reference",
+      characterId: recipe.character_id,
+      workflowId: activeComfyWorkflow?.id ?? null
+    });
+    runService.updateRunStatus(run.id, "needs_review");
+    return { run: currentRun(), error: message };
   }
 
   function providerForRoute(providerName: ProviderOverride): ImageGenerationProvider {

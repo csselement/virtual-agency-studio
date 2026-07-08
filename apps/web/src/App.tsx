@@ -16,7 +16,6 @@ import {
   MagicWand,
   Package,
   Pulse,
-  Robot,
   SquaresFour,
   TiktokLogo,
   ThreadsLogo,
@@ -199,6 +198,8 @@ interface ComfyWorkflow {
   negative_prompt_input: string | null;
   seed_node: string | null;
   seed_input: string | null;
+  reference_image_node: string | null;
+  reference_image_input: string | null;
   output_node_ids: string[];
   default_for_tiers: string[];
   status: string;
@@ -223,8 +224,10 @@ interface ActivityCandidate {
 
 interface ContentBrief {
   id: string;
+  activity_candidate_id: string | null;
   goal: string | null;
   platform_targets: string | null;
+  content_pillar: string | null;
   visual_direction: string | null;
   caption_angle: string | null;
 }
@@ -422,8 +425,11 @@ export const workflowStageModel: Array<{
 const supportNavItems = [
   { id: "timeline", label: "Timeline", path: "/runs", detail: "Run trace", icon: ClockCounterClockwise },
   { id: "prompt-studio", label: "Prompt Studio", path: "/prompt-studio", detail: "Briefs", icon: MagicWand },
-  { id: "operations", label: "Operations", path: "/settings", detail: "Routing", icon: Gear }
+  { id: "operations", label: "Operations", path: "/settings", detail: "Routing", icon: Gear },
+  { id: "help", label: "Help", path: "/help", detail: "How VAS works", icon: Article }
 ];
+
+export const supportNavPaths = supportNavItems.map((item) => item.path);
 
 const navItems = [
   ...workflowStageModel,
@@ -1040,7 +1046,7 @@ function AppShell({
         </div>
         <div className="rail-system">
           <span>System</span>
-          <strong><Robot aria-hidden="true" size={14} weight="regular" /> Health <i aria-hidden="true" /></strong>
+          <strong><Command aria-hidden="true" size={14} weight="regular" /> Health <i aria-hidden="true" /></strong>
         </div>
       </aside>
 
@@ -2454,12 +2460,65 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
   const selectedCharacter = data.characters.find((character) => character.id === characterId) ?? data.characters[0] ?? null;
   const selectedCandidate = candidates.find((candidate) => candidate.id === selectedCandidateId) ?? candidates[0] ?? null;
   const selectedBrief = briefs.find((brief) => brief.id === selectedBriefId) ?? briefs[0] ?? null;
+  const selectedCandidateExplicit = candidates.find((candidate) => candidate.id === selectedCandidateId) ?? null;
   const conceptStats = [
     { label: "Activities", value: candidates.length, detail: selectedCandidate?.status ?? "None" },
     { label: "Briefs", value: briefs.length, detail: selectedBrief?.platform_targets ?? platform },
     { label: "Recipe", value: recipe ? "Ready" : "None", detail: recipe ? "Saved" : "Compose" },
     { label: "Frame", value: platform === "Instagram" ? "4:5" : "9:16", detail: platform }
   ];
+  const canCreateBrief = Boolean(characterId && selectedCandidateId);
+  const canComposeRecipe = Boolean(characterId && selectedBriefId);
+  const productionPath = `/assets?characterId=${encodeURIComponent(characterId)}&status=raw_generation`;
+  const selectedBriefSource = selectedBrief?.activity_candidate_id
+    ? candidates.find((candidate) => candidate.id === selectedBrief.activity_candidate_id)
+    : null;
+  const recipeScene = recipe?.final_prompt?.match(/SCENE\s*\n([\s\S]*?)\n\nPLATFORM/)?.[1]?.trim() ?? "";
+  const planningSteps = [
+    {
+      number: "01",
+      title: "Choose activity",
+      state: selectedCandidateExplicit ? "Selected" : candidates.length ? "Pick one" : "Needed",
+      body: selectedCandidateExplicit
+        ? `${selectedCandidateExplicit.title}: ${selectedCandidateExplicit.visual_motif ?? selectedCandidateExplicit.body}`
+        : "Generate activity candidates, then choose the one that should become content."
+    },
+    {
+      number: "02",
+      title: "Create brief",
+      state: selectedBrief ? "Brief ready" : "Needed",
+      body: selectedBrief
+        ? `${selectedBrief.platform_targets ?? platform} · ${selectedBrief.visual_direction ?? "No visual direction"}`
+        : "The brief locks the selected activity into platform, goal, visual direction, and caption angle."
+    },
+    {
+      number: "03",
+      title: "Compose recipe",
+      state: recipe ? "Recipe ready" : "Needed",
+      body: recipe
+        ? compactInlineText(recipeScene || recipe.final_prompt || "", 110)
+        : "The recipe assembles character law, appearance rules, selected brief, and generation settings."
+    }
+  ];
+
+  function applyCandidateToComposer(candidate: ActivityCandidate) {
+    const nextPlatform = candidate.platform_fit?.split(",")[0]?.trim() || platform;
+    setPlatform(nextPlatform);
+    setScene(`${candidate.title}: ${candidate.body}${candidate.location_fiction ? ` Location: ${candidate.location_fiction}.` : ""}${candidate.visual_motif ? ` Visual motif: ${candidate.visual_motif}.` : ""}`);
+    setGoal(`Turn ${candidate.title.toLowerCase()} into an audience-facing ${nextPlatform} post that stays faithful to ${selectedCharacter?.name ?? "the character"}.`);
+    setContentPillar(candidate.activity_type ?? "process");
+    setRecipe(null);
+  }
+
+  function selectBriefForRecipe(brief: ContentBrief) {
+    setSelectedBriefId(brief.id);
+    setPlatform(brief.platform_targets ?? platform);
+    setScene(brief.visual_direction ?? scene);
+    setGoal(brief.goal ?? goal);
+    setContentPillar(brief.content_pillar ?? contentPillar);
+    setRecipe(null);
+    setMessage("Brief selected for recipe composition.");
+  }
 
   useEffect(() => {
     if (!characterId && data.characters[0]) setCharacterId(data.characters[0].id);
@@ -2489,6 +2548,7 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
       const payload = await postJson<{ run: RunSummary; candidates: ActivityCandidate[] }>(`/api/characters/${characterId}/activity-runs`, {});
       setCandidates(payload.candidates);
       setSelectedCandidateId(payload.candidates[0]?.id ?? "");
+      if (payload.candidates[0]) applyCandidateToComposer(payload.candidates[0]);
       setMessage("Activity candidates generated.");
       navigate(`/runs/${payload.run.id}`);
     } catch (caught) {
@@ -2497,10 +2557,13 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
   }
 
   async function selectActivity(candidateId: string) {
+    const candidate = candidates.find((item) => item.id === candidateId);
+    if (candidate) applyCandidateToComposer(candidate);
     await postJson(`/api/activity-candidates/${candidateId}/select`, { status: "selected" });
     await refreshPlanning();
     setSelectedCandidateId(candidateId);
-    setMessage("Activity selected.");
+    setSelectedBriefId("");
+    setMessage("Activity selected. Composer fields updated; create a brief next.");
   }
 
   async function createBrief() {
@@ -2520,7 +2583,8 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
       });
       await refreshPlanning();
       setSelectedBriefId(payload.brief.id);
-      setMessage("Content brief created.");
+      setRecipe(null);
+      setMessage("Content brief created from the selected activity. Compose the recipe next.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create brief.");
     }
@@ -2532,12 +2596,12 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
       const payload = await postJson<{ recipe: PromptRecipe }>("/api/prompt-recipes/compose", {
         characterId,
         contentBriefId: selectedBriefId || null,
-        platform,
-        scene,
+        platform: selectedBrief?.platform_targets || platform,
+        scene: selectedBrief?.visual_direction || selectedCandidate?.visual_motif || scene,
         generationSettings: { aspectRatio: platform === "Instagram" ? "4:5" : "9:16" }
       });
       setRecipe(payload.recipe);
-      setMessage("Prompt recipe composed and saved.");
+      setMessage("Prompt recipe composed and saved. Continue to Production to generate images.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to compose prompt.");
     }
@@ -2581,11 +2645,12 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
         <article className="concept-hero">
           <span>Selected character</span>
           <h2>{selectedCharacter?.name ?? "None"}</h2>
-          <p>{selectedCandidate?.title ?? "No activity selected"}</p>
+          <p>{recipe ? "Recipe ready for image generation." : selectedBrief ? "Brief ready for recipe composition." : selectedCandidateExplicit ? `${selectedCandidateExplicit.title} selected for brief.` : "Choose an activity to start the content chain."}</p>
           <div className="button-stack">
-            <button type="button" onClick={generateActivities} disabled={!characterId}>Activities</button>
-            <button type="button" onClick={createBrief} disabled={!characterId}>Brief</button>
-            <button className="primary-action" type="button" onClick={composePrompt} disabled={!characterId}>Recipe</button>
+            <button type="button" onClick={generateActivities} disabled={!characterId}>1 Generate activities</button>
+            <button type="button" onClick={createBrief} disabled={!canCreateBrief}>2 Create brief</button>
+            <button className="primary-action" type="button" onClick={composePrompt} disabled={!canComposeRecipe}>3 Compose recipe</button>
+            {recipe && <button type="button" onClick={() => navigate(productionPath)}>Generate image</button>}
           </div>
         </article>
         <div className="concept-stat-grid">
@@ -2598,9 +2663,21 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
           ))}
         </div>
       </section>
+      <section className="prompt-flow-panel" aria-label="Prompt Studio workflow">
+        {planningSteps.map((step) => (
+          <article key={step.number} className={step.state.includes("ready") || step.state === "Selected" ? "prompt-flow-step complete" : "prompt-flow-step"}>
+            <span>{step.number}</span>
+            <div>
+              <strong>{step.title}</strong>
+              <em>{step.state}</em>
+              <p>{step.body}</p>
+            </div>
+          </article>
+        ))}
+      </section>
       <section className="prompt-studio-grid">
         <article className="settings-preview">
-          <div className="section-heading"><h2>Compose</h2></div>
+          <div className="section-heading"><h2>Working Brief Inputs</h2><span>{selectedCandidateExplicit ? "Synced from activity" : "Manual"}</span></div>
           <div className="form-stack">
             <label>Character<select value={characterId} onChange={(event) => setCharacterId(event.target.value)}>{data.characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
             <label>Platform<select value={platform} onChange={(event) => setPlatform(event.target.value)}>{["Instagram", "TikTok", "Threads", "Generic"].map((item) => <option key={item}>{item}</option>)}</select></label>
@@ -2610,16 +2687,66 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
           </div>
         </article>
         <article className="settings-preview">
-          <div className="section-heading"><h2>Activity Candidates</h2></div>
-          {candidates.length === 0 ? <EmptyState title="No candidates" body="Generate activities to start planning." /> : <div className="compact-list">{candidates.map((candidate) => <div key={candidate.id}><strong>{candidate.title} · {candidate.status}</strong><small>{candidate.body}</small><small>{candidate.location_fiction} · {candidate.visual_motif} · identity {candidate.identity_fit_score.toFixed(2)}</small><div className="inline-actions"><button type="button" onClick={() => selectActivity(candidate.id)}>Select</button></div></div>)}</div>}
+          <div className="section-heading"><h2>1 Activity Candidates</h2><span>{selectedCandidateExplicit ? "One selected" : "Select source"}</span></div>
+          {candidates.length === 0 ? <EmptyState title="No candidates" body="Generate activities to start planning." /> : (
+            <div className="compact-list prompt-choice-list">
+              {candidates.map((candidate) => {
+                const selected = candidate.id === selectedCandidateId;
+                return (
+                  <button className={`prompt-choice${selected ? " selected" : ""}`} key={candidate.id} type="button" onClick={() => selectActivity(candidate.id)}>
+                    <span>
+                      <strong>{candidate.title}</strong>
+                      <small>{candidate.body}</small>
+                      <small>{candidate.location_fiction || "No location"} · {candidate.visual_motif || "No motif"} · identity {candidate.identity_fit_score.toFixed(2)}</small>
+                    </span>
+                    <em className={selected ? "status-pill completed" : "status-pill queued"}>{selected ? "selected" : candidate.status}</em>
+                  </button>
+                );
+              })}
+            </div>
+          )}
         </article>
         <article className="settings-preview">
-          <div className="section-heading"><h2>Content Briefs</h2></div>
-          {briefs.length === 0 ? <EmptyState title="No briefs" body="Create a brief from a selected activity." /> : <div className="compact-list">{briefs.map((brief) => <button className="run-row" key={brief.id} type="button" onClick={() => setSelectedBriefId(brief.id)}><span><strong>{brief.goal}</strong><small>{brief.platform_targets} · {brief.visual_direction}</small></span>{selectedBriefId === brief.id && <em className="status-pill completed">selected</em>}</button>)}</div>}
+          <div className="section-heading"><h2>2 Content Brief</h2><span>{selectedBrief ? "Feeds recipe" : "Create next"}</span></div>
+          {briefs.length === 0 ? <EmptyState title="No briefs" body="Create a brief from a selected activity." /> : (
+            <div className="compact-list">
+              {briefs.map((brief) => (
+                <button className={`run-row${selectedBriefId === brief.id ? " selected" : ""}`} key={brief.id} type="button" onClick={() => selectBriefForRecipe(brief)}>
+                  <span>
+                    <strong>{brief.goal}</strong>
+                    <small>{brief.platform_targets} · {brief.content_pillar} · {brief.visual_direction}</small>
+                    {brief.activity_candidate_id && <small>From: {candidates.find((candidate) => candidate.id === brief.activity_candidate_id)?.title ?? "activity candidate"}</small>}
+                  </span>
+                  {selectedBriefId === brief.id && <em className="status-pill completed">selected</em>}
+                </button>
+              ))}
+            </div>
+          )}
         </article>
         <article className="settings-preview">
-          <div className="section-heading"><h2>Prompt Preview</h2></div>
-          {!recipe ? <EmptyState title="No prompt composed" body="Compose a prompt to preview the final assembled recipe." /> : <div className="prompt-preview"><strong>Final prompt</strong><pre>{recipe.final_prompt}</pre><strong>Negative prompt</strong><pre>{recipe.negative_prompt}</pre><small>Constitution: {recipe.constitution_version_id}</small><small>Appearance: {recipe.appearance_profile_id}</small></div>}
+          <div className="section-heading"><h2>3 Recipe Output</h2><span>{recipe ? "Ready" : "Not composed"}</span></div>
+          {!recipe ? (
+            <EmptyState title="No prompt composed" body={selectedBrief ? "Compose a recipe to assemble law, look, activity, and generation settings." : "Select or create a brief before composing a recipe."} />
+          ) : (
+            <div className="prompt-preview recipe-output">
+              <strong>Generation scene</strong>
+              <p>{recipeScene || "No scene block found."}</p>
+              <strong>Lineage</strong>
+              <small>Activity: {selectedBriefSource?.title ?? selectedCandidate?.title ?? "Not linked"}</small>
+              <small>Brief: {selectedBrief?.goal ?? recipe.content_brief_id ?? "None"}</small>
+              <small>Constitution: {recipe.constitution_version_id}</small>
+              <small>Appearance: {recipe.appearance_profile_id}</small>
+              <div className="inline-actions">
+                <button className="primary-action" type="button" onClick={() => navigate(productionPath)}>Continue to Production</button>
+              </div>
+              <details>
+                <summary>Full assembled prompt</summary>
+                <pre>{recipe.final_prompt}</pre>
+                <strong>Negative prompt</strong>
+                <pre>{recipe.negative_prompt}</pre>
+              </details>
+            </div>
+          )}
         </article>
       </section>
     </>
@@ -2636,6 +2763,8 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
   const [selectedAnalyses, setSelectedAnalyses] = useState<AssetAnalysis[]>([]);
   const [recipes, setRecipes] = useState<PromptRecipe[]>([]);
   const [selectedRecipeId, setSelectedRecipeId] = useState("");
+  const [providerSettings, setProviderSettings] = useState<ProviderSettings | null>(null);
+  const [comfyWorkflows, setComfyWorkflows] = useState<ComfyWorkflow[]>([]);
   const [providerOverride, setProviderOverride] = useState("auto");
   const [contentTierOverride, setContentTierOverride] = useState("");
   const [overrideReason, setOverrideReason] = useState("");
@@ -2679,6 +2808,55 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     { label: "Selected", value: selectedAsset ? assetStatusLabel(selectedAsset.status) : "None", detail: selectedAsset?.provider ?? providerOverride }
   ];
 
+  const activeComfyWorkflows = comfyWorkflows.filter((workflow) => workflow.status === "active" && !workflow.validation_error);
+  const engineOptions = [
+    {
+      value: "auto",
+      label: "Auto router",
+      detail: providerSettings
+        ? `Default ${providerSettings.defaultImageGenerationProvider.replaceAll("-", " ")} with policy fallback`
+        : "Uses configured routing and fallbacks",
+      ready: true
+    },
+    {
+      value: "hermes",
+      label: "Hermes",
+      detail: providerSettings?.hermesImageGenerationPath
+        ? `Route ${providerSettings.hermesImageGenerationPath}`
+        : "Set Hermes image route in Operations",
+      ready: Boolean(providerSettings?.hasHermesApiKey && providerSettings.hermesImageGenerationPath)
+    },
+    {
+      value: "openai",
+      label: "OpenAI Images",
+      detail: providerSettings
+        ? `${providerSettings.openaiImageModel} · ${providerSettings.openaiImageSize}`
+        : "Direct OpenAI image endpoint",
+      ready: Boolean(providerSettings?.hasOpenaiApiKey)
+    },
+    {
+      value: "comfyui-cloud",
+      label: "ComfyUI Cloud",
+      detail: activeComfyWorkflows.length
+        ? `${activeComfyWorkflows.length} active workflow${activeComfyWorkflows.length === 1 ? "" : "s"}`
+        : "Needs active workflow",
+      ready: Boolean(providerSettings?.comfyuiCloudReady)
+    },
+    {
+      value: "wavespeed",
+      label: "WaveSpeed AI",
+      detail: providerSettings?.wavespeedImageGenerationPath ?? "Flux route",
+      ready: Boolean(providerSettings?.hasWavespeedApiKey)
+    },
+    {
+      value: "mock",
+      label: "Mock",
+      detail: "Local test image, no external provider",
+      ready: true
+    }
+  ];
+  const selectedEngine = engineOptions.find((engine) => engine.value === providerOverride) ?? engineOptions[0];
+
   async function loadAssets(next: { characterId?: string; status?: string; platformFit?: string; query?: string } = {}) {
     const params = new URLSearchParams();
     const nextCharacterId = next.characterId ?? characterId;
@@ -2704,6 +2882,18 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     setSelectedRecipeId((current) => (payload.recipes.some((recipe) => recipe.id === current) ? current : payload.recipes[0]?.id ?? ""));
   }
 
+  async function loadGenerationOptions() {
+    const [providerResponse, workflowResponse] = await Promise.all([
+      fetch(`${apiBaseUrl()}/api/settings/providers`),
+      fetch(`${apiBaseUrl()}/api/settings/comfy-workflows`)
+    ]);
+    if (!providerResponse.ok || !workflowResponse.ok) throw new Error("Unable to load generation engines.");
+    const providerPayload = (await providerResponse.json()) as { settings: ProviderSettings };
+    const workflowPayload = (await workflowResponse.json()) as { workflows: ComfyWorkflow[] };
+    setProviderSettings(providerPayload.settings);
+    setComfyWorkflows(workflowPayload.workflows);
+  }
+
   async function loadSelectedDetail(assetId: string) {
     if (!assetId) {
       setSelectedAnalyses([]);
@@ -2718,6 +2908,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
   useEffect(() => {
     loadAssets().catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load assets."));
     loadRecipes().catch(() => undefined);
+    loadGenerationOptions().catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load generation engines."));
   }, []);
 
   useEffect(() => {
@@ -2767,29 +2958,37 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
 
   async function generateImage() {
     if (!selectedRecipeId || generationInProgress) return;
-    setError(null);
-    setGeneratingImage(true);
-    setMessage("Image generation started. Waiting for the provider to return an asset.");
-    try {
-      const payload = await postJson<{ run: RunSummary; asset?: ImageAsset }>(`/api/prompt-recipes/${selectedRecipeId}/generate-image`, {
-        providerOverride,
-        overrideReason: overrideReason.trim() || undefined,
-        contentTierOverride: contentTierOverride || undefined
-      });
-      setMessage(`Image generation ${payload.run.status}. ${payload.asset ? "Asset stored locally." : "Check Runs for provider details."}`);
-      await loadAssets({ status: "", platformFit: "", query: "" });
-      if (payload.asset) {
-        setStatusFilter("");
-        setPlatformFit("");
-        setAssetQuery("");
-        replaceRouteQuery("/assets", { status: null, platformFit: null });
-        setSelectedAssetId(payload.asset.id);
-      }
-    } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to generate image.");
-    } finally {
-      setGeneratingImage(false);
+    if (!selectedEngine.ready) {
+      setError(`${selectedEngine.label} is not ready. Configure it in Operations before generating.`);
+      return;
     }
+      if (providerOverride !== "auto" && !overrideReason.trim()) {
+        setError("Manual engine selection requires an override reason so the run audit trail explains the choice.");
+        return;
+      }
+      setError(null);
+      setGeneratingImage(true);
+      setMessage(`Image generation started with ${selectedEngine.label}. Waiting for the provider to return an asset.`);
+      try {
+        const payload = await postJson<{ run: RunSummary; asset?: ImageAsset }>(`/api/prompt-recipes/${selectedRecipeId}/generate-image`, {
+          providerOverride,
+          overrideReason: overrideReason.trim() || undefined,
+          contentTierOverride: contentTierOverride || undefined
+        });
+        setMessage(`Image generation ${payload.run.status}. ${payload.asset ? "Asset stored locally." : "Check Runs for provider details."}`);
+        await loadAssets({ status: "", platformFit: "", query: "" });
+        if (payload.asset) {
+          setStatusFilter("");
+          setPlatformFit("");
+          setAssetQuery("");
+          replaceRouteQuery("/assets", { status: null, platformFit: null });
+          setSelectedAssetId(payload.asset.id);
+        }
+      } catch (caught) {
+        setError(caught instanceof Error ? caught.message : "Unable to generate image.");
+      } finally {
+        setGeneratingImage(false);
+      }
   }
 
   async function analyzeAsset(assetId: string) {
@@ -2842,6 +3041,20 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     }
   }
 
+  function chooseGenerationEngine(engine: { value: string; label: string; ready: boolean }) {
+    if (!engine.ready && engine.value !== "auto") {
+      setError(`${engine.label} is not ready. Open Operations to configure credentials or workflow routes.`);
+      return;
+    }
+    setError(null);
+    setProviderOverride(engine.value);
+    if (engine.value === "auto") {
+      setOverrideReason("");
+    } else if (!overrideReason.trim()) {
+      setOverrideReason(`Operator selected ${engine.label} for this generation.`);
+    }
+  }
+
   const assetStatusOptions = ["", "raw_generation", "candidate", "approved_reference", "approved_post_asset", "rejected_identity_drift", "rejected_quality", "rejected_policy", "published", "archived"];
   const platformOptions = ["", "Instagram", "TikTok", "Threads"];
   const assetQuickLanes = [
@@ -2869,7 +3082,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
         <article className="asset-hero">
           <span>Route</span>
           <h2>{selectedRecipe ? compactInlineText(selectedRecipe.final_prompt, 28) || selectedRecipe.id.replace("prompt_recipe_", "recipe ").slice(0, 15) : "No recipe"}</h2>
-          <p>{generationInProgress ? "Provider running" : selectedAsset ? selectedAsset.status.replaceAll("_", " ") : "No asset selected"}</p>
+          <p>{generationInProgress ? `${selectedEngine.label} running` : selectedRecipe ? `${selectedEngine.label} selected` : "Select a recipe and engine to generate."}</p>
           <div className="button-stack">
             <button type="button" onClick={() => navigate("/prompt-studio")}>Concept</button>
             <button className="primary-action" type="button" onClick={generateImage} disabled={!selectedRecipeId || generationInProgress}>
@@ -2894,6 +3107,41 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
           ))}
         </div>
       </section>
+      <section className="asset-generation-panel" aria-label="Image generation setup">
+        <article className="settings-preview generation-recipe-panel">
+          <div className="section-heading">
+            <h2>Generation setup</h2>
+            <span>{selectedEngine.label}</span>
+          </div>
+          <div className="form-stack">
+            <label>Prompt recipe<select value={selectedRecipeId} onChange={(event) => setSelectedRecipeId(event.target.value)}>{recipes.length === 0 && <option value="">No recipes</option>}{recipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{assetRecipeLabel(recipe)}</option>)}</select></label>
+            <label>Content tier<select value={contentTierOverride} onChange={(event) => setContentTierOverride(event.target.value)}><option value="">Auto classify</option><option value="sfw_standard">SFW standard</option><option value="sfw_sensitive">SFW sensitive</option><option value="mature_adult">Mature adult</option><option value="blocked_or_uncertain">Blocked or uncertain</option></select></label>
+            {providerOverride !== "auto" && <label>Engine choice reason<textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Required for manual provider override" /></label>}
+          </div>
+        </article>
+        <article className="settings-preview generation-engine-panel">
+          <div className="section-heading">
+            <h2>Generation engine</h2>
+            <button type="button" onClick={() => navigate("/settings")}>Configure</button>
+          </div>
+          <div className="generation-engine-grid" role="list" aria-label="Generation engines">
+            {engineOptions.map((engine) => (
+              <button
+                key={engine.value}
+                className={providerOverride === engine.value ? "selected" : ""}
+                type="button"
+                onClick={() => chooseGenerationEngine(engine)}
+                aria-pressed={providerOverride === engine.value}
+              >
+                <span>{engine.label}</span>
+                <strong>{engine.ready ? "Ready" : "Setup needed"}</strong>
+                <small>{engine.detail}</small>
+              </button>
+            ))}
+          </div>
+          <p className="generation-engine-note">Auto preserves policy routing and fallback. A manual engine choice is recorded on the run with the override reason.</p>
+        </article>
+      </section>
       <section className="asset-workbench">
         <article className="settings-preview asset-controls">
           <div className="asset-filter-heading">
@@ -2906,15 +3154,6 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
             <label>Character<select value={characterId} onChange={(event) => changeCharacter(event.target.value)}><option value="">All characters</option>{data.characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
             <label>Status<select value={statusFilter} onChange={(event) => applyFilters(event.target.value, platformFit)}>{assetStatusOptions.map((item) => <option key={item} value={item}>{item ? item.replaceAll("_", " ") : "All states"}</option>)}</select></label>
             <label>Platform fit<select value={platformFit} onChange={(event) => applyFilters(statusFilter, event.target.value)}>{platformOptions.map((item) => <option key={item} value={item}>{item || "Any platform"}</option>)}</select></label>
-            <label>Prompt recipe<select value={selectedRecipeId} onChange={(event) => setSelectedRecipeId(event.target.value)}>{recipes.length === 0 && <option value="">No recipes</option>}{recipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{assetRecipeLabel(recipe)}</option>)}</select></label>
-            <details className="editor-drawer asset-route-drawer">
-              <summary>Generation routing</summary>
-              <div className="form-stack">
-                <label>Provider route<select value={providerOverride} onChange={(event) => setProviderOverride(event.target.value)}><option value="auto">Auto router</option><option value="openai">OpenAI</option><option value="comfyui-cloud">ComfyUI Cloud</option><option value="hermes">Hermes</option><option value="wavespeed">WaveSpeed AI</option><option value="mock">Mock</option></select></label>
-                <label>Content tier<select value={contentTierOverride} onChange={(event) => setContentTierOverride(event.target.value)}><option value="">Auto classify</option><option value="sfw_standard">SFW standard</option><option value="sfw_sensitive">SFW sensitive</option><option value="mature_adult">Mature adult</option><option value="blocked_or_uncertain">Blocked or uncertain</option></select></label>
-                {providerOverride !== "auto" && <label>Override reason<textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Required for manual provider override" /></label>}
-              </div>
-            </details>
           </div>
         </article>
         <article className="settings-preview asset-grid-panel">
@@ -3876,6 +4115,169 @@ function PlaceholderPage({ title }: { title: string }) {
   );
 }
 
+const helpWorkflow = [
+  {
+    label: "Heartbeat",
+    path: "/",
+    intent: "Start here when you are unsure what needs attention.",
+    operatorAction: "Use the dispatch cards to jump to the oldest blocked or ready stage."
+  },
+  {
+    label: "Birth",
+    path: "/characters",
+    intent: "Create the character and keep the identity readable.",
+    operatorAction: "Create or select a character, run Birth, then review proposed identity changes before continuing."
+  },
+  {
+    label: "Production",
+    path: "/assets",
+    intent: "Build the character archive.",
+    operatorAction: "Generate, import, analyze, approve, reject, or convert assets into drafts."
+  },
+  {
+    label: "Review",
+    path: "/drafts",
+    intent: "Keep human approval between automation and publication.",
+    operatorAction: "Review drafts first, then handle run gates, asset gates, and identity proposals."
+  },
+  {
+    label: "Publishing",
+    path: "/calendar",
+    intent: "Package approved work for manual posting.",
+    operatorAction: "Inspect the publishing ledger, export packages, and record manual publish events."
+  },
+  {
+    label: "Feedback",
+    path: "/feedback",
+    intent: "Turn published response into character learning.",
+    operatorAction: "Log performance and qualitative response, launch reflection, then review identity proposals."
+  }
+];
+
+const helpSupport = [
+  ["Prompt Studio", "Compose briefs and image-generation recipes when Production needs more directed assets."],
+  ["Timeline", "Trace RunEvents, provider jobs, artifacts, decisions, and failures without changing publishing state."],
+  ["Operations", "Configure provider routing, Comfy workflows, automation supervision, and manual run tools."]
+];
+
+function HelpPage({ navigate }: { navigate: (path: string) => void }) {
+  return (
+    <>
+      <header className="topbar page-heading">
+        <div>
+          <p className="eyebrow">Operator guide</p>
+          <h1>How Virtual Agency Studio works</h1>
+          <p>VAS is a local-first studio for building AI influencer characters through observable, human-approved automation.</p>
+        </div>
+      </header>
+
+      <section className="help-shell">
+        <article className="help-intro">
+          <div>
+            <span>Core idea</span>
+            <h2>One character moves through a repeatable production cycle.</h2>
+            <p>
+              The system is not a generic dashboard. It is an operator workflow for creating a character, producing assets,
+              reviewing outputs, publishing manually, logging feedback, and using that feedback to propose identity evolution.
+            </p>
+          </div>
+          <div className="help-quick-start">
+            <span>First session</span>
+            <ol>
+              <li>Create or select a character in Birth.</li>
+              <li>Run Birth and review the resulting identity material.</li>
+              <li>Generate assets in Production, then approve only the ones that fit.</li>
+              <li>Create a draft, approve it in Review, and publish manually from Publishing.</li>
+              <li>Log response in Feedback and review any proposed character changes.</li>
+            </ol>
+          </div>
+        </article>
+
+        <section className="help-principles" aria-label="System principles">
+          <article>
+            <span>01</span>
+            <strong>Runs are the audit trail</strong>
+            <p>Every automated action should create readable RunEvents so an operator can inspect what happened and why.</p>
+          </article>
+          <article>
+            <span>02</span>
+            <strong>Publication stays manual</strong>
+            <p>VAS prepares packages and ledger entries, but the human operator decides when and where something goes live.</p>
+          </article>
+          <article>
+            <span>03</span>
+            <strong>Identity changes are gated</strong>
+            <p>Canon, memory, and Constitution changes are proposals until a human approves them.</p>
+          </article>
+        </section>
+
+        <section className="help-workflow" aria-label="VAS workflow stages">
+          <div className="section-heading">
+            <span>Workflow</span>
+            <h2>The operator cycle</h2>
+          </div>
+          <div className="help-stage-list">
+            {helpWorkflow.map((stage, index) => (
+              <article key={stage.label}>
+                <div className="help-stage-index">{String(index + 1).padStart(2, "0")}</div>
+                <div>
+                  <h3>{stage.label}</h3>
+                  <p>{stage.intent}</p>
+                  <small>{stage.operatorAction}</small>
+                </div>
+                <button type="button" onClick={() => navigate(stage.path)}>
+                  Open
+                </button>
+              </article>
+            ))}
+          </div>
+        </section>
+
+        <section className="help-reference-grid">
+          <article>
+            <div className="section-heading">
+              <span>Support tools</span>
+              <h2>Where the extra nav items fit</h2>
+            </div>
+            <dl>
+              {helpSupport.map(([term, description]) => (
+                <div key={term}>
+                  <dt>{term}</dt>
+                  <dd>{description}</dd>
+                </div>
+              ))}
+            </dl>
+          </article>
+          <article>
+            <div className="section-heading">
+              <span>Status language</span>
+              <h2>How to read blockers</h2>
+            </div>
+            <dl>
+              <div>
+                <dt>Attention</dt>
+                <dd>Something needs an operator decision, usually a review gate, draft, asset, or feedback item.</dd>
+              </div>
+              <div>
+                <dt>Ready</dt>
+                <dd>The stage has enough input to proceed, but it is not urgent.</dd>
+              </div>
+              <div>
+                <dt>Blocked</dt>
+                <dd>An earlier stage must be completed before this stage can produce useful work.</dd>
+              </div>
+              <div>
+                <dt>Complete</dt>
+                <dd>The stage has produced usable output for the current cycle.</dd>
+              </div>
+            </dl>
+          </article>
+        </section>
+      </section>
+    </>
+  );
+}
+
 function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
   const [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [savedSettings, setSavedSettings] = useState<ProviderSettings | null>(null);
@@ -3903,6 +4305,8 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     negativePromptInput: "text",
     seedNode: "",
     seedInput: "seed",
+    referenceImageNode: "",
+    referenceImageInput: "image",
     outputNodeIds: "",
     defaultForTiers: "sfw_standard"
   });
@@ -4023,6 +4427,8 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       negativePromptInput: workflowForm.negativePromptInput.trim(),
       seedNode: workflowForm.seedNode.trim(),
       seedInput: workflowForm.seedInput.trim(),
+      referenceImageNode: workflowForm.referenceImageNode.trim(),
+      referenceImageInput: workflowForm.referenceImageInput.trim(),
       outputNodeIds: workflowForm.outputNodeIds.split(",").map((item) => item.trim()).filter(Boolean),
       defaultForTiers: workflowForm.defaultForTiers.split(",").map((item) => item.trim()).filter(Boolean)
     };
@@ -4039,6 +4445,8 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       negativePromptInput: workflow.negative_prompt_input ?? "text",
       seedNode: workflow.seed_node ?? "",
       seedInput: workflow.seed_input ?? "seed",
+      referenceImageNode: workflow.reference_image_node ?? "",
+      referenceImageInput: workflow.reference_image_input ?? "image",
       outputNodeIds: workflow.output_node_ids.join(", "),
       defaultForTiers: workflow.default_for_tiers.join(", ") || "sfw_standard"
     });
@@ -4057,6 +4465,8 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       negativePromptInput: "text",
       seedNode: "",
       seedInput: "seed",
+      referenceImageNode: "",
+      referenceImageInput: "image",
       outputNodeIds: "",
       defaultForTiers: "sfw_standard"
     });
@@ -4287,6 +4697,28 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     }
   }
 
+  async function generateIdentityAngleBatch() {
+    if (!manualPromptRecipeId.trim() || !automationSettings) return;
+    setError(null);
+    setMessage(null);
+    const promptSuffixes = [
+      "front-facing headshot, neutral expression, even daylight",
+      "three-quarter left portrait, same face, natural expression",
+      "three-quarter right portrait, same face, natural expression",
+      "profile portrait, same face, clean background"
+    ].slice(0, automationSettings.maxImagesPerRun).map((suffix) => `\n\n${suffix}`);
+    try {
+      const payload = await postJson<{ results: Array<{ run: RunSummary }> }>(`/api/automation/prompt-recipes/${manualPromptRecipeId.trim()}/generate-images`, {
+        promptSuffixes
+      });
+      const firstRunId = payload.results.find((result) => result.run)?.run.id;
+      setMessage("Identity angle candidates generated.");
+      if (firstRunId) navigate(`/runs/${firstRunId}`);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to generate identity angle candidates.");
+    }
+  }
+
   async function analyzeLatestCandidates() {
     if (!manualCharacterId) return;
     setError(null);
@@ -4481,6 +4913,8 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
                   <label>Negative input<input value={workflowForm.negativePromptInput} onChange={(event) => setWorkflowForm({ ...workflowForm, negativePromptInput: event.target.value })} /></label>
                   <label>Seed node<input value={workflowForm.seedNode} onChange={(event) => setWorkflowForm({ ...workflowForm, seedNode: event.target.value })} /></label>
                   <label>Seed input<input value={workflowForm.seedInput} onChange={(event) => setWorkflowForm({ ...workflowForm, seedInput: event.target.value })} /></label>
+                  <label>Reference node<input value={workflowForm.referenceImageNode} onChange={(event) => setWorkflowForm({ ...workflowForm, referenceImageNode: event.target.value })} /></label>
+                  <label>Reference input<input value={workflowForm.referenceImageInput} onChange={(event) => setWorkflowForm({ ...workflowForm, referenceImageInput: event.target.value })} /></label>
                 </div>
                 <label>Output nodes<input value={workflowForm.outputNodeIds} onChange={(event) => setWorkflowForm({ ...workflowForm, outputNodeIds: event.target.value })} placeholder="comma separated" /></label>
                 <label>Default tiers<input value={workflowForm.defaultForTiers} onChange={(event) => setWorkflowForm({ ...workflowForm, defaultForTiers: event.target.value })} /></label>
@@ -4560,7 +4994,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
                 <div><dt>Assets</dt><dd>{characterManualAssets.length}</dd></div>
               </dl>
               <div className="settings-action-grid manual-actions">
-                <button className="primary-action" type="button" onClick={runDailyNow} disabled={!manualCharacterId}>Daily run</button>
+              <button className="primary-action" type="button" onClick={runDailyNow} disabled={!manualCharacterId}>Daily run</button>
                 <button type="button" onClick={generateActivityCandidates} disabled={!manualCharacterId}>Activities</button>
                 <button type="button" onClick={analyzeLatestCandidates} disabled={!manualCharacterId}>Analyze</button>
               </div>
@@ -4579,6 +5013,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
                 <p>{selectedManualRecipe?.final_prompt?.slice(0, 150) ?? "Compose in Prompt Studio."}</p>
               </div>
               <button type="button" onClick={generateImageCandidates} disabled={!manualPromptRecipeId.trim()}>Generate images</button>
+              <button type="button" onClick={generateIdentityAngleBatch} disabled={!manualPromptRecipeId.trim()}>Generate identity angles</button>
               <label>Asset
                 <select value={manualAssetId} onChange={(event) => setManualAssetId(event.target.value)} disabled={characterManualAssets.length === 0}>
                   {characterManualAssets.length === 0 ? <option value="">No assets</option> : characterManualAssets.map((asset) => <option key={asset.id} value={asset.id}>{assetLabel(asset)}</option>)}
@@ -4650,6 +5085,9 @@ export function App() {
     }
     if (path === "/feedback") {
       return <FeedbackPage data={data} navigate={navigate} />;
+    }
+    if (path === "/help") {
+      return <HelpPage navigate={navigate} />;
     }
     const item = navItems.find((navItem) => navItem.path === path);
     return <PlaceholderPage title={item?.label ?? "Not Found"} />;

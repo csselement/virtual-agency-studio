@@ -1,5 +1,5 @@
 import { existsSync, readFileSync } from "node:fs";
-import { extname } from "node:path";
+import { basename, extname } from "node:path";
 
 export type ProviderJobStatus = "queued" | "submitted" | "completed" | "failed";
 
@@ -7,7 +7,15 @@ export interface GenerateImageRequest {
   prompt: string;
   negativePrompt?: string;
   characterId?: string;
+  referenceImageSource?: string;
+  referenceImageUrl?: string;
   referenceImageIds?: string[];
+  referenceImages?: Array<{
+    id?: string;
+    path: string;
+    originalName?: string;
+    mimeType?: string;
+  }>;
   outputDir?: string;
 }
 
@@ -86,6 +94,8 @@ export interface WorkflowMappings {
   negativePromptInput?: string;
   seedNode?: string;
   seedInput?: string;
+  referenceImageNode?: string;
+  referenceImageInput?: string;
   outputNodeIds?: string[];
 }
 
@@ -281,6 +291,49 @@ function applyWorkflowMappings(workflow: Record<string, unknown>, mappings: Work
     setWorkflowInput(next, mappings.seedNode, mappings.seedInput, Math.floor(Math.random() * 1_000_000_000));
   }
   return next;
+}
+
+async function uploadComfyReferenceImage(baseUrl: string, apiKey: string, referenceImage: NonNullable<GenerateImageRequest["referenceImages"]>[number]) {
+  if (!existsSync(referenceImage.path)) {
+    throw new ProviderGenerationError(`Reference image file is missing: ${referenceImage.path}`, {
+      provider: "comfyui-cloud-image-generation",
+      code: "missing_reference_image",
+      fallbackEligible: false
+    });
+  }
+  const buffer = readFileSync(referenceImage.path);
+  const form = new FormData();
+  const filename = referenceImage.originalName?.trim() || basename(referenceImage.path);
+  const mimeType = referenceImage.mimeType?.trim() || mimeTypeForPath(referenceImage.path);
+  form.set("image", new Blob([new Uint8Array(buffer)], { type: mimeType }), filename);
+  form.set("type", "input");
+  form.set("overwrite", "false");
+  const response = await fetch(endpoint(baseUrl, "/api/upload/image"), {
+    method: "POST",
+    headers: {
+      "X-API-Key": apiKey
+    },
+    body: form
+  });
+  const payload = (await response.json().catch(() => ({}))) as Record<string, unknown>;
+  if (!response.ok) {
+    throw providerFailure("comfyui-cloud-image-generation", response.status, payload, `ComfyUI Cloud reference upload failed with ${response.status}`);
+  }
+  const name = firstString(payload.name) ?? firstString(payload.filename);
+  if (!name) {
+    throw new ProviderGenerationError("ComfyUI Cloud reference upload did not return a filename.", {
+      provider: "comfyui-cloud-image-generation",
+      code: "missing_upload_name",
+      fallbackEligible: false,
+      response: payload
+    });
+  }
+  return {
+    name,
+    subfolder: typeof payload.subfolder === "string" ? payload.subfolder : "",
+    type: typeof payload.type === "string" ? payload.type : "input",
+    raw: payload
+  };
 }
 
 function findOutputFile(value: unknown): { filename: string; subfolder?: string; type?: string } | undefined {
@@ -595,6 +648,24 @@ export class ComfyUICloudImageGenerationProvider implements ImageGenerationProvi
       });
     }
     const promptWorkflow = applyWorkflowMappings(workflow, this.config.workflowMappings, request);
+    let uploadedReference: Awaited<ReturnType<typeof uploadComfyReferenceImage>> | undefined;
+    if (isOfficialCloudPromptEndpoint && this.config.workflowMappings?.referenceImageNode && this.config.workflowMappings.referenceImageInput) {
+      const [referenceImage] = request.referenceImages ?? [];
+      if (!referenceImage) {
+        throw new ProviderGenerationError("ComfyUI Cloud workflow requires an approved character reference image.", {
+          provider: this.name,
+          code: "missing_reference_image",
+          fallbackEligible: false
+        });
+      }
+      uploadedReference = await uploadComfyReferenceImage(baseUrl, apiKey, referenceImage);
+      setWorkflowInput(
+        promptWorkflow,
+        this.config.workflowMappings.referenceImageNode,
+        this.config.workflowMappings.referenceImageInput,
+        uploadedReference.name
+      );
+    }
     const body = isOfficialCloudPromptEndpoint
       ? {
           prompt: promptWorkflow,
@@ -602,7 +673,10 @@ export class ComfyUICloudImageGenerationProvider implements ImageGenerationProvi
             api_key_comfy_org: apiKey,
             virtual_agency_prompt: request.prompt,
             negative_prompt: request.negativePrompt,
-            reference_image_ids: request.referenceImageIds ?? []
+            reference_image_ids: request.referenceImageIds ?? [],
+            reference_image_source: request.referenceImageSource,
+            reference_image_url: request.referenceImageUrl,
+            uploaded_reference: uploadedReference
           }
         }
       : {
@@ -644,7 +718,7 @@ export class ComfyUICloudImageGenerationProvider implements ImageGenerationProvi
             response: statusPayload
           });
         }
-        if (status === "completed" || status === "succeeded") {
+        if (status === "completed" || status === "succeeded" || status === "success") {
           break;
         }
         if (attempt === maxPollAttempts - 1) {
@@ -690,6 +764,7 @@ export class ComfyUICloudImageGenerationProvider implements ImageGenerationProvi
             status: statusPayload,
             details,
             outputFile,
+            uploadedReference,
             b64_json: buffer.toString("base64"),
             mimeType
           }

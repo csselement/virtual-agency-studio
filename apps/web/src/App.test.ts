@@ -6,6 +6,7 @@ import {
   readCharacterRouteState,
   readDraftRouteState,
   readFeedbackRouteState,
+  supportNavPaths,
   workflowStageModel
 } from "./App";
 
@@ -23,6 +24,11 @@ describe("web app config", () => {
       ["publishing", "/calendar"],
       ["feedback", "/feedback"]
     ]);
+  });
+
+  it("keeps help in support navigation outside the production cycle", () => {
+    expect(workflowStageModel.map((stage) => stage.path)).not.toContain("/help");
+    expect(supportNavPaths).toContain("/help");
   });
 
   it("reads workflow continuity query params", () => {

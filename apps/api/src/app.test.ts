@@ -30,6 +30,7 @@ function testConfig(dir: string, overrides: Partial<ApiConfig> = {}): ApiConfig 
     wavespeedBaseUrl: "https://api.wavespeed.ai/api/v3",
     wavespeedApiKey: "",
     wavespeedImageGenerationPath: "/wavespeed-ai/flux-dev",
+    publicApiHost: "127.0.0.1",
     ...overrides
   };
 }
@@ -142,14 +143,21 @@ describe("api app", () => {
         name: "Portrait API workflow",
         workflow: {
           "6": { class_type: "CLIPTextEncode", inputs: { text: "old prompt" } },
+          "8": { class_type: "LoadImage", inputs: { image: "placeholder.png", upload: "image" } },
           "9": { class_type: "SaveImage", inputs: { filename_prefix: "VirtualAgency" } }
         },
         positivePromptNode: "6",
-        positivePromptInput: "text"
+        positivePromptInput: "text",
+        referenceImageNode: "8",
+        referenceImageInput: "image"
       }
     });
     expect(valid.statusCode).toBe(201);
     expect(valid.json().validation).toMatchObject({ valid: true, outputNodeIds: ["9"] });
+    expect(valid.json().workflow).toMatchObject({
+      reference_image_node: "8",
+      reference_image_input: "image"
+    });
     const activated = await app.inject({
       method: "POST",
       url: `/api/settings/comfy-workflows/${valid.json().workflow.id}/activate`,
@@ -157,6 +165,7 @@ describe("api app", () => {
     });
     expect(activated.statusCode).toBe(200);
     expect(activated.json().workflow.default_for_tiers).toContain("sfw_standard");
+    expect(activated.json().workflow.reference_image_node).toBe("8");
     const providers = await app.inject({ method: "GET", url: "/api/settings/providers" });
     expect(providers.json().settings).toMatchObject({
       hasActiveComfyuiCloudWorkflow: true,
@@ -394,6 +403,8 @@ describe("api app", () => {
     expect(recipe.statusCode).toBe(201);
     const recipeBody = recipe.json().recipe;
     expect(recipeBody.final_prompt).toContain("CHARACTER CORE");
+    expect(recipeBody.final_prompt).toContain(selected.json().candidate.visual_motif);
+    expect(recipeBody.final_prompt).not.toContain("A quiet studio reset with tactile props.");
     expect(recipeBody.constitution_version_id).toBeTruthy();
     expect(recipeBody.appearance_profile_id).toBeTruthy();
 
@@ -464,6 +475,226 @@ describe("api app", () => {
     expect(detail.events.map((event: { type: string }) => event.type)).toContain("image.generated");
     expect(detail.events.map((event: { type: string }) => event.type)).toContain("human.approved");
     expect(detail.decisions.map((decision: { decision: string }) => decision.decision)).toContain("asset.approved_post_asset");
+
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("always uses the character profile reference for image generation", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vas-api-"));
+    const app = buildApp(testConfig(dir));
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/characters",
+      payload: { name: "Reference Profile", summary: "Reference image selector test." }
+    });
+    const characterId = created.json().character.id;
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/constitutions`,
+      payload: { body: "Keep the reference image as hard identity anchor.", changeReason: "Reference test." }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/appearance`,
+      payload: { body: "Reference-guided editorial framing." }
+    });
+    const refA = await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/reference-images`,
+      payload: {
+        originalName: "ref-a.txt",
+        mimeType: "text/plain",
+        base64: Buffer.from("ref-a").toString("base64"),
+        status: "approved"
+      }
+    });
+    const refB = await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/reference-images`,
+      payload: {
+        originalName: "ref-b.txt",
+        mimeType: "text/plain",
+        base64: Buffer.from("ref-b").toString("base64"),
+        status: "experimental"
+      }
+    });
+    expect(refA.statusCode).toBe(201);
+    expect(refB.statusCode).toBe(201);
+    const profileReferenceImageId = refA.json().referenceImage.id;
+    const suppliedReferenceImageId = refB.json().referenceImage.id;
+
+    const recipe = await app.inject({
+      method: "POST",
+      url: "/api/prompt-recipes/compose",
+      payload: {
+        characterId,
+        platform: "Instagram",
+        scene: "Reference-anchored studio portrait.",
+        generationSettings: { aspectRatio: "4:5" }
+      }
+    });
+
+    const generated = await app.inject({
+      method: "POST",
+      url: `/api/prompt-recipes/${recipe.json().recipe.id}/generate-image`,
+      payload: { referenceImageId: suppliedReferenceImageId }
+    });
+    expect(generated.statusCode).toBe(201);
+    const generatedBody = generated.json();
+    expect(generatedBody.asset.status).toBe("raw_generation");
+
+    const runDetail = await app.inject({ method: "GET", url: `/api/runs/${generatedBody.run.id}` });
+    const runPayload = runDetail.json();
+    expect(runPayload.events.find((event: { type: string; payload?: { selectedReferenceImageId?: string } }) => event.type === "routing.classified")?.payload)
+      .toMatchObject({ selectedReferenceImageId: profileReferenceImageId });
+    expect(runPayload.providerJobs[0].request).toMatchObject({ referenceImageIds: [profileReferenceImageId] });
+    expect(runPayload.events.find((event: { type: string }) => event.type === "routing.profile_reference_warning")).toBeTruthy();
+
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("ignores an invalid referenceImageId and uses profile reference when present", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vas-api-"));
+    const app = buildApp(testConfig(dir));
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/characters",
+      payload: { name: "Reference Scope", summary: "Scope check for reference id validation." }
+    });
+    const characterId = created.json().character.id;
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/constitutions`,
+      payload: { body: "Keep identity consistency checks strict.", changeReason: "Validation test." }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/appearance`,
+      payload: { body: "Reference scope strictness." }
+    });
+    const approvedReferenceImage = await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/reference-images`,
+      payload: {
+        originalName: "approved-ref.txt",
+        mimeType: "text/plain",
+        base64: Buffer.from("ref-approved").toString("base64"),
+        status: "approved"
+      }
+    });
+    const recipe = await app.inject({
+      method: "POST",
+      url: "/api/prompt-recipes/compose",
+      payload: { characterId, platform: "Instagram", scene: "Scope-safe reference check scene." }
+    });
+
+    const generated = await app.inject({
+      method: "POST",
+      url: `/api/prompt-recipes/${recipe.json().recipe.id}/generate-image`,
+      payload: { referenceImageId: "ref_missing_1" }
+    });
+    expect(generated.statusCode).toBe(201);
+    const generatedBody = generated.json();
+    const runDetail = await app.inject({ method: "GET", url: `/api/runs/${generatedBody.run.id}` });
+    const runPayload = runDetail.json();
+    expect(runPayload.events.find((event: { type: string; payload?: { selectedReferenceImageId?: string } }) => event.type === "routing.classified")?.payload)
+      .toMatchObject({ selectedReferenceImageId: approvedReferenceImage.json().referenceImage.id });
+    expect(runPayload.providerJobs[0].request).toMatchObject({
+      referenceImageIds: [approvedReferenceImage.json().referenceImage.id]
+    });
+
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("requires an approved character reference image for ComfyUI identity generations", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vas-api-"));
+    const app = buildApp(
+      testConfig(dir, {
+        mockProviders: false,
+        comfyuiCloudApiKey: "comfy-key",
+        openaiApiKey: "",
+        wavespeedApiKey: ""
+      })
+    );
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/characters",
+      payload: { name: "Comfy Identity Gate", summary: "Identity reference gate test." }
+    });
+    const characterId = created.json().character.id;
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/constitutions`,
+      payload: { body: "Keep character identity strict and reviewable.", changeReason: "Identity gate test." }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/appearance`,
+      payload: { body: "Reference-first editorial style." }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/reference-images`,
+      payload: {
+        originalName: "experimental-ref.txt",
+        mimeType: "text/plain",
+        base64: Buffer.from("not-approved-reference").toString("base64"),
+        status: "experimental"
+      }
+    });
+    const workflow = await app.inject({
+      method: "POST",
+      url: "/api/settings/comfy-workflows",
+      payload: {
+        name: "Identity Gate Test Workflow",
+        workflow: {
+          "6": { class_type: "CLIPTextEncode", inputs: { text: "open prompt" } },
+          "8": { class_type: "LoadImage", inputs: { image: "placeholder.png", upload: "image" } },
+          "9": { class_type: "SaveImage", inputs: { filename_prefix: "VirtualAgency" } }
+        },
+        positivePromptNode: "6",
+        positivePromptInput: "text",
+        referenceImageNode: "8",
+        referenceImageInput: "image",
+        outputNodeIds: ["9"]
+      }
+    });
+    expect(workflow.statusCode).toBe(201);
+    const activate = await app.inject({ method: "POST", url: `/api/settings/comfy-workflows/${workflow.json().workflow.id}/activate`, body: { tier: "sfw_standard" } });
+    expect(activate.statusCode).toBe(200);
+
+    const providers = await app.inject({
+      method: "PATCH",
+      url: "/api/settings/providers",
+      body: {
+        mockProviders: false,
+        defaultImageGenerationProvider: "comfyui-cloud"
+      }
+    });
+    expect(providers.statusCode).toBe(200);
+    expect(providers.json().settings.hasActiveComfyuiCloudWorkflow).toBe(true);
+
+    const recipe = await app.inject({
+      method: "POST",
+      url: "/api/prompt-recipes/compose",
+      payload: { characterId, platform: "Instagram", scene: "identity-gated portrait test." }
+    });
+
+    const generated = await app.inject({
+      method: "POST",
+      url: `/api/prompt-recipes/${recipe.json().recipe.id}/generate-image`
+    });
+    expect(generated.statusCode).toBe(202);
+    const generatedBody = generated.json();
+    expect(generatedBody.run.status).toBe("needs_review");
+
+    const runPayload = (await app.inject({ method: "GET", url: `/api/runs/${generatedBody.run.id}` })).json();
+    expect(runPayload.events.find((event: { type: string; payload?: { gate?: string } }) => event.type === "review.required" && event.payload?.gate === "identity_reference"))
+      .toBeTruthy();
+    expect(runPayload.providerJobs).toHaveLength(0);
 
     await app.close();
     rmSync(dir, { recursive: true, force: true });
@@ -546,6 +777,10 @@ describe("api app", () => {
     expect(draft.variants).toHaveLength(4);
     const instagram = draft.variants.find((variant: { platform: string }) => variant.platform === "instagram");
     expect(instagram.disclosure_text).toContain("AI-generated");
+    expect(instagram.disclosure_text).not.toContain("No automatic posting");
+    expect(instagram.notes).toBe("Ready for final caption review and publishing approval.");
+    expect(instagram.caption).toContain("Draft Loop");
+    expect(instagram.caption).not.toMatch(/Post package|approve_for_draft|manual review|no automatic posting|Virtual Agency Studio/i);
 
     const edited = await app.inject({
       method: "PATCH",
@@ -735,6 +970,62 @@ describe("api app", () => {
     const status = await app.inject({ method: "GET", url: "/api/automation/status" });
     expect(status.statusCode).toBe(200);
     expect(status.json().status.runsNeedingReview.map((run: { id: string }) => run.id)).toContain(manual.json().run.id);
+
+    await app.close();
+    rmSync(dir, { recursive: true, force: true });
+  });
+
+  it("generates multiple image candidates using identity-angle prompt suffixes", async () => {
+    const dir = mkdtempSync(join(tmpdir(), "vas-api-"));
+    const app = buildApp(testConfig(dir));
+    const created = await app.inject({
+      method: "POST",
+      url: "/api/characters",
+      payload: { name: "Angle Batch Test", summary: "Phase multi-angle automation candidate test." }
+    });
+    const characterId = created.json().character.id;
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/constitutions`,
+      payload: { body: "Keep identity-aware angle diversity in portrait shots.", changeReason: "Angle generation test." }
+    });
+    await app.inject({
+      method: "POST",
+      url: `/api/characters/${characterId}/appearance`,
+      payload: { body: "Editorial identity guide with neutral expression." }
+    });
+    const recipe = await app.inject({
+      method: "POST",
+      url: "/api/prompt-recipes/compose",
+      payload: { characterId, platform: "Instagram", scene: "Controlled identity shoot with multiple angles." }
+    });
+
+    const payload = await app.inject({
+      method: "POST",
+      url: `/api/automation/prompt-recipes/${recipe.json().recipe.id}/generate-images`,
+      body: {
+        promptSuffixes: [
+          "\n\nfront-facing identity test angle",
+          "\n\nleft profile identity test angle",
+          "\n\nright profile identity test angle"
+        ],
+        count: 4
+      }
+    });
+    expect(payload.statusCode).toBe(201);
+    const results = payload.json().results;
+    expect(results).toHaveLength(3);
+
+    const firstRunId = results[0]?.run?.id;
+    expect(firstRunId).toBeTruthy();
+
+    const runDetail = await app.inject({ method: "GET", url: `/api/runs/${firstRunId}` });
+    expect(runDetail.statusCode).toBe(200);
+    expect(runDetail.json().providerJobs[0].request.prompt).toContain("front-facing identity test angle");
+
+    const assets = await app.inject({ method: "GET", url: `/api/assets?characterId=${characterId}` });
+    expect(assets.statusCode).toBe(200);
+    expect(assets.json().assets).toHaveLength(3);
 
     await app.close();
     rmSync(dir, { recursive: true, force: true });

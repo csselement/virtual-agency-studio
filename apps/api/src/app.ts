@@ -580,13 +580,19 @@ export function buildApp(config: ApiConfig) {
 
   app.post<{
     Params: { id: string };
-    Body: { providerOverride?: string | null; overrideReason?: string | null; contentTierOverride?: string | null };
+    Body: {
+      providerOverride?: string | null;
+      overrideReason?: string | null;
+      contentTierOverride?: string | null;
+      referenceImageId?: string | null;
+    };
   }>("/api/prompt-recipes/:id/generate-image", async (request, reply) => {
     try {
       const result = await generateImageFromPromptRecipe(db, config, runService, request.params.id, "", {
         providerOverride: request.body?.providerOverride === "auto" ? undefined : (request.body?.providerOverride as ProviderOverride | undefined),
         overrideReason: request.body?.overrideReason,
-        contentTierOverride: request.body?.contentTierOverride
+        contentTierOverride: request.body?.contentTierOverride,
+        referenceImageId: request.body?.referenceImageId
       });
       if ("error" in result) {
         return reply.code(result.run.status === "needs_review" ? 202 : 502).send(result);
@@ -842,6 +848,8 @@ export function buildApp(config: ApiConfig) {
       negativePromptInput: body.negativePromptInput ?? existing?.negative_prompt_input ?? "",
       seedNode: body.seedNode ?? existing?.seed_node ?? "",
       seedInput: body.seedInput ?? existing?.seed_input ?? "",
+      referenceImageNode: body.referenceImageNode ?? existing?.reference_image_node ?? "",
+      referenceImageInput: body.referenceImageInput ?? existing?.reference_image_input ?? "",
       outputNodeIds: body.outputNodeIds ?? existing?.output_node_ids ?? [],
       defaultForTiers: body.defaultForTiers ?? existing?.default_for_tiers ?? [],
       status: body.status ?? existing?.status ?? "draft"
@@ -955,6 +963,8 @@ export function buildApp(config: ApiConfig) {
         negativePromptInput: workflow.negative_prompt_input ?? undefined,
         seedNode: workflow.seed_node ?? undefined,
         seedInput: workflow.seed_input ?? undefined,
+        referenceImageNode: workflow.reference_image_node ?? undefined,
+        referenceImageInput: workflow.reference_image_input ?? undefined,
         outputNodeIds: workflow.output_node_ids
       }
     });
@@ -1044,9 +1054,18 @@ export function buildApp(config: ApiConfig) {
     }
   });
 
-  app.post<{ Params: { id: string }; Body: { count?: number } }>("/api/automation/prompt-recipes/:id/generate-images", async (request, reply) => {
+  app.post<{ Params: { id: string }; Body: { count?: number; promptSuffixes?: string[] } }>(
+    "/api/automation/prompt-recipes/:id/generate-images",
+    async (request, reply) => {
     try {
-      return reply.code(201).send(await generateImageCandidatesForPrompt(db, config, runService, request.params.id, request.body?.count));
+      return reply
+        .code(201)
+        .send(
+          await generateImageCandidatesForPrompt(db, config, runService, request.params.id, {
+            count: request.body?.count,
+            promptSuffixes: request.body?.promptSuffixes
+          })
+        );
     } catch (error) {
       const message = error instanceof Error ? error.message : "Unable to generate image candidates";
       return reply.code(message.startsWith("Prompt recipe not found") ? 404 : 400).send({ error: message });

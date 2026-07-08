@@ -121,6 +121,9 @@ Phase 12 complete. MVP build package implemented and verified locally. Provider 
 - Added docs for provider routing, OpenAI Images, Comfy workflow activation, and troubleshooting route gates.
 - Registered the Comfy Cloud MCP server in Codex as `comfy-cloud`, completed OAuth account login, and documented the MCP/app-provider split.
 - Defaulted ComfyUI Cloud direct provider configuration to `https://cloud.comfy.org` and accepted `COMFY_API_KEY` as an alias for local account API-key configuration.
+- Added Comfy Cloud reference-image workflow support: active workflows can declare a reference image node/input, and VAS uploads the approved character reference image to Comfy Cloud before `/api/prompt`.
+- Added a FaceID/InstantID SFW character-shoot workflow template plus installer script, and routed ready SFW character generation to Comfy Cloud first for identity control.
+- Added a review gate when an identity workflow is active but the character has no approved reference image.
 
 ## Verification
 
@@ -191,11 +194,14 @@ Phase 12 complete. MVP build package implemented and verified locally. Provider 
 - Phase 12 browser interaction proof: clicked `Test image generation` in Settings mock mode and verified the app opened a completed `Provider Test: Image Generation` run with provider request/completion events and no console warnings/errors.
 - Phase 12 secret scan: searched for API-key/secret patterns outside `node_modules`, `dist`, `data`, and `package-lock.json`; hits were limited to placeholders/docs/config names and the intentional redaction test.
 - Comfy Cloud MCP setup: `codex mcp add comfy-cloud --url https://cloud.comfy.org/mcp`, OAuth login completed, and `codex mcp get comfy-cloud` reported enabled Streamable HTTP at `https://cloud.comfy.org/mcp`.
+- FaceID/InstantID provider tests: `npm --workspace @virtual-agency/providers run test`
+- FaceID/InstantID API routing tests: `npm --workspace @virtual-agency/api run test -- src/providers/providerRouter.test.ts src/app.test.ts`
 
 ## Known Gaps
 
 - Real Hermes calls require configured base URLs, API keys, and endpoint paths.
 - Real ComfyUI Cloud app-provider calls require a saved API key plus an activated API-format workflow, even though the Codex MCP account is authenticated separately.
+- The FaceID/InstantID workflow template depends on the matching Comfy Cloud custom nodes and model filenames; checkpoint/model names may need adjustment in the target workspace before first successful real generation.
 - The scheduler is an in-process local MVP scheduler, not a production durable worker.
 - The app has no authentication and is documented as unsafe for public deployment without a real auth, authorization, and network hardening pass.
 - No reusable Conservatory source code was found inside this repo.

@@ -1,0 +1,201 @@
+{
+  "2": {
+    "inputs": {
+      "unet_name": "flux1-krea-dev_fp8_scaled.safetensors",
+      "weight_dtype": "default"
+    },
+    "class_type": "UNETLoader",
+    "_meta": {
+      "title": "Base Flux UNet"
+    }
+  },
+  "3": {
+    "inputs": {
+      "clip_name1": "clip_l.safetensors",
+      "clip_name2": "t5xxl_fp16.safetensors",
+      "type": "flux",
+      "device": "default"
+    },
+    "class_type": "DualCLIPLoader",
+    "_meta": {
+      "title": "Flux CLIP"
+    }
+  },
+  "4": {
+    "inputs": {
+      "vae_name": "ae.safetensors"
+    },
+    "class_type": "VAELoader",
+    "_meta": {
+      "title": "Flux VAE"
+    }
+  },
+  "5": {
+    "inputs": {
+      "text": "photorealistic SFW editorial portrait, strict identity retention to the reference image, same face, same bone structure, same eye shape, same nose, same jawline, close-up portrait, natural skin texture, realistic eyes, soft daylight, premium social media campaign photography, shallow depth of field, 85mm lens, high detail",
+      "clip": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Positive Prompt"
+    }
+  },
+  "6": {
+    "inputs": {
+      "text": "nsfw, nude, explicit, low quality, bad anatomy, distorted face, changed identity, different person, wrong face, deformed eyes, extra fingers, missing fingers, watermark, text, logo, oversaturated, plastic skin, uncanny, cartoon, anime",
+      "clip": [
+        "3",
+        0
+      ]
+    },
+    "class_type": "CLIPTextEncode",
+    "_meta": {
+      "title": "Negative Prompt"
+    }
+  },
+  "7": {
+    "inputs": {
+      "width": 1024,
+      "height": 1024,
+      "batch_size": 1
+    },
+    "class_type": "EmptySD3LatentImage",
+    "_meta": {
+      "title": "Identity Latent"
+    }
+  },
+  "8": {
+    "inputs": {
+      "ipadapter_file": "ip-adapter-plus-face_sdxl_vit-h.safetensors"
+    },
+    "class_type": "IPAdapterModelLoader",
+    "_meta": {
+      "title": "IPAdapter Face Model"
+    }
+  },
+  "9": {
+    "inputs": {
+      "provider": "CPU"
+    },
+    "class_type": "IPAdapterInsightFaceLoader",
+    "_meta": {
+      "title": "InsightFace Detector"
+    }
+  },
+  "10": {
+    "inputs": {
+      "clip_name": "CLIP-ViT-H-14-laion2B-s32B-b79K.safetensors"
+    },
+    "class_type": "CLIPVisionLoader",
+    "_meta": {
+      "title": "CLIP Vision"
+    }
+  },
+  "11": {
+    "inputs": {
+      "weight": 1,
+      "embeds_scaling": "V only",
+      "combine_embeds": "concat",
+      "weight_faceidv2": 1,
+      "weight_type": "linear",
+      "start_at": 0,
+      "end_at": 1,
+      "ipadapter": [
+        "8",
+        0
+      ],
+      "clip_vision": [
+        "10",
+        0
+      ],
+      "insightface": [
+        "9",
+        0
+      ],
+      "image": [
+        "22",
+        0
+      ],
+      "model": [
+        "2",
+        0
+      ]
+    },
+    "class_type": "IPAdapterFaceID",
+    "_meta": {
+      "title": "FaceID Refinement"
+    }
+  },
+  "12": {
+    "inputs": {
+      "seed": 42,
+      "steps": 40,
+      "cfg": 8,
+      "sampler_name": "euler",
+      "scheduler": "simple",
+      "denoise": 0.65,
+      "model": [
+        "11",
+        0
+      ],
+      "positive": [
+        "5",
+        0
+      ],
+      "negative": [
+        "6",
+        0
+      ],
+      "latent_image": [
+        "7",
+        0
+      ]
+    },
+    "class_type": "KSampler",
+    "_meta": {
+      "title": "Identity-Locked Sampler"
+    }
+  },
+  "13": {
+    "inputs": {
+      "samples": [
+        "12",
+        0
+      ],
+      "vae": [
+        "4",
+        0
+      ]
+    },
+    "class_type": "VAEDecode",
+    "_meta": {
+      "title": "Decode to Image"
+    }
+  },
+  "14": {
+    "inputs": {
+      "filename_prefix": "vas_faceid_instantid_sfw",
+      "images": [
+        "13",
+        0
+      ]
+    },
+    "class_type": "SaveImage",
+    "_meta": {
+      "title": "VAS Output"
+    }
+  },
+  "22": {
+    "inputs": {
+      "image": "vas-reference-placeholder.png",
+      "upload": "image"
+    },
+    "class_type": "LoadImage",
+    "_meta": {
+      "title": "Character Reference Image"
+    }
+  }
+}

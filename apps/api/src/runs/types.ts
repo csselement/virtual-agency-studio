@@ -39,6 +39,7 @@ export const runEventTypes = [
   "routing.classified",
   "routing.override_applied",
   "routing.blocked",
+  "routing.profile_reference_warning",
   "provider.requested",
   "provider.fallback",
   "provider.completed",

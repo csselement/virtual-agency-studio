@@ -32,7 +32,8 @@ function testConfig(dir: string): ApiConfig {
     openaiImageModeration: "low",
     wavespeedBaseUrl: "https://api.wavespeed.ai/api/v3",
     wavespeedApiKey: "",
-    wavespeedImageGenerationPath: "/wavespeed-ai/flux-dev"
+    wavespeedImageGenerationPath: "/wavespeed-ai/flux-dev",
+    publicApiHost: "127.0.0.1"
   };
 }
 

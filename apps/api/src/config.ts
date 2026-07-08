@@ -25,6 +25,7 @@ export interface ApiConfig {
   wavespeedBaseUrl: string;
   wavespeedApiKey: string;
   wavespeedImageGenerationPath: string;
+  publicApiHost: string;
 }
 
 const repoRoot = resolve(dirname(fileURLToPath(import.meta.url)), "../../..");
@@ -36,6 +37,7 @@ function resolveFromRepo(pathValue: string) {
 export function loadConfig(): ApiConfig {
   const dataDir = process.env.DATA_DIR ?? "./data";
   const databaseUrl = process.env.DATABASE_URL ?? "./data/agency.sqlite";
+  const publicApiHost = process.env.PUBLIC_API_HOST?.trim() || process.env.PUBLIC_HOST?.trim();
 
   return {
     host: process.env.API_HOST ?? "127.0.0.1",
@@ -60,6 +62,7 @@ export function loadConfig(): ApiConfig {
     openaiImageModeration: process.env.OPENAI_IMAGE_MODERATION === "auto" ? "auto" : "low",
     wavespeedBaseUrl: process.env.WAVESPEED_BASE_URL ?? "https://api.wavespeed.ai/api/v3",
     wavespeedApiKey: process.env.WAVESPEED_API_KEY ?? "",
-    wavespeedImageGenerationPath: process.env.WAVESPEED_IMAGE_GENERATION_PATH ?? "/wavespeed-ai/flux-dev"
+    wavespeedImageGenerationPath: process.env.WAVESPEED_IMAGE_GENERATION_PATH ?? "/wavespeed-ai/flux-dev",
+    publicApiHost: publicApiHost || (process.env.API_HOST === "0.0.0.0" || process.env.API_HOST === undefined ? "127.0.0.1" : process.env.API_HOST)
   };
 }

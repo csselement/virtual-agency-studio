@@ -9,6 +9,7 @@ REMOTE_PASSWORD="${REMOTE_PASSWORD:-}"
 API_PORT="${API_PORT:-4317}"
 WEB_PORT="${WEB_PORT:-5173}"
 PUBLIC_HOST="${PUBLIC_HOST:-${REMOTE_HOST}}"
+PUBLIC_API_HOST="${PUBLIC_API_HOST:-${PUBLIC_HOST}}"
 VITE_API_BASE_URL="${VITE_API_BASE_URL:-http://${PUBLIC_HOST}:${API_PORT}}"
 RUN_TESTS="${RUN_TESTS:-false}"
 SERVICE_PREFIX="${SERVICE_PREFIX:-virtual-agency}"
@@ -62,7 +63,7 @@ rsync -az --delete -e "${RSYNC_SSH}" \
 
 log "Installing dependencies, building, and installing user services"
 "${SSH_BASE[@]}" "${REMOTE}" \
-  "REMOTE_DIR='${REMOTE_DIR}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' VITE_API_BASE_URL='${VITE_API_BASE_URL}' RUN_TESTS='${RUN_TESTS}' API_SERVICE='${API_SERVICE}' WEB_SERVICE='${WEB_SERVICE}' bash -s" <<'REMOTE_SCRIPT'
+  "REMOTE_DIR='${REMOTE_DIR}' API_PORT='${API_PORT}' WEB_PORT='${WEB_PORT}' PUBLIC_API_HOST='${PUBLIC_API_HOST}' VITE_API_BASE_URL='${VITE_API_BASE_URL}' RUN_TESTS='${RUN_TESTS}' API_SERVICE='${API_SERVICE}' WEB_SERVICE='${WEB_SERVICE}' bash -s" <<'REMOTE_SCRIPT'
 set -Eeuo pipefail
 
 cd "${REMOTE_DIR}"
@@ -94,11 +95,17 @@ OPENAI_IMAGE_MODERATION=low
 WAVESPEED_BASE_URL=https://api.wavespeed.ai/api/v3
 WAVESPEED_API_KEY=
 WAVESPEED_IMAGE_GENERATION_PATH=/wavespeed-ai/flux-dev
+PUBLIC_API_HOST=${PUBLIC_API_HOST}
 ENV
   chmod 600 .env
   echo "Created ${REMOTE_DIR}/.env. Fill Hermes paths there or in the app Settings UI."
 else
-  echo "Preserved existing ${REMOTE_DIR}/.env"
+  if grep -q '^PUBLIC_API_HOST=' .env; then
+    sed -i "s#^PUBLIC_API_HOST=.*#PUBLIC_API_HOST=${PUBLIC_API_HOST}#g" .env
+  else
+    echo "PUBLIC_API_HOST=${PUBLIC_API_HOST}" >> .env
+  fi
+  echo "Preserved and updated PUBLIC_API_HOST in existing ${REMOTE_DIR}/.env"
 fi
 
 npm ci

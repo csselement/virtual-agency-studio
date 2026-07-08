@@ -128,6 +128,16 @@ export function routeForPrompt(input: {
       overrideApplied: false
     };
   }
+  if (input.providerAvailability?.["comfyui-cloud"] === true) {
+    return {
+      tier: classification.tier,
+      routeReason: `${classification.reason} ComfyUI Cloud is configured, so identity-locked character generation is the first route.`,
+      providers: ["comfyui-cloud", "openai"],
+      blocked: false,
+      requiresReview: false,
+      overrideApplied: false
+    };
+  }
   return {
     tier: classification.tier,
     routeReason: classification.reason,

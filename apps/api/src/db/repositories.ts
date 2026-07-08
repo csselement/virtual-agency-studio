@@ -308,6 +308,8 @@ export interface ComfyWorkflowSummary {
   negative_prompt_input: string | null;
   seed_node: string | null;
   seed_input: string | null;
+  reference_image_node: string | null;
+  reference_image_input: string | null;
   output_node_ids: string[];
   default_for_tiers: string[];
   status: string;
@@ -426,6 +428,8 @@ function parseComfyWorkflow(row: DbRow): ComfyWorkflowSummary {
     negative_prompt_input: row.negative_prompt_input ? String(row.negative_prompt_input) : null,
     seed_node: row.seed_node ? String(row.seed_node) : null,
     seed_input: row.seed_input ? String(row.seed_input) : null,
+    reference_image_node: row.reference_image_node ? String(row.reference_image_node) : null,
+    reference_image_input: row.reference_image_input ? String(row.reference_image_input) : null,
     output_node_ids: parseJsonArray(row.output_node_ids_json),
     default_for_tiers: parseJsonArray(row.default_for_tiers_json),
     status: String(row.status),
@@ -1708,7 +1712,7 @@ export function listComfyWorkflows(db: AppDatabase): ComfyWorkflowSummary[] {
   return db
     .prepare(
       `select id, name, workflow_json, positive_prompt_node, positive_prompt_input, negative_prompt_node, negative_prompt_input,
-        seed_node, seed_input, output_node_ids_json, default_for_tiers_json, status, validation_error, created_at, updated_at
+        seed_node, seed_input, reference_image_node, reference_image_input, output_node_ids_json, default_for_tiers_json, status, validation_error, created_at, updated_at
        from comfy_workflows order by updated_at desc`
     )
     .all()
@@ -1719,7 +1723,7 @@ export function getComfyWorkflow(db: AppDatabase, workflowId: string): ComfyWork
   const row = db
     .prepare(
       `select id, name, workflow_json, positive_prompt_node, positive_prompt_input, negative_prompt_node, negative_prompt_input,
-        seed_node, seed_input, output_node_ids_json, default_for_tiers_json, status, validation_error, created_at, updated_at
+        seed_node, seed_input, reference_image_node, reference_image_input, output_node_ids_json, default_for_tiers_json, status, validation_error, created_at, updated_at
        from comfy_workflows where id = ?`
     )
     .get(workflowId) as DbRow | undefined;
@@ -1742,6 +1746,8 @@ export function upsertComfyWorkflow(
     negativePromptInput?: string | null;
     seedNode?: string | null;
     seedInput?: string | null;
+    referenceImageNode?: string | null;
+    referenceImageInput?: string | null;
     outputNodeIds?: string[];
     defaultForTiers?: string[];
     status?: string;
@@ -1753,8 +1759,8 @@ export function upsertComfyWorkflow(
   db.prepare(
     `insert into comfy_workflows
       (id, name, workflow_json, positive_prompt_node, positive_prompt_input, negative_prompt_node, negative_prompt_input,
-       seed_node, seed_input, output_node_ids_json, default_for_tiers_json, status, validation_error, created_at, updated_at)
-      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+       seed_node, seed_input, reference_image_node, reference_image_input, output_node_ids_json, default_for_tiers_json, status, validation_error, created_at, updated_at)
+      values (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
       on conflict(id) do update set
         name = excluded.name,
         workflow_json = excluded.workflow_json,
@@ -1764,6 +1770,8 @@ export function upsertComfyWorkflow(
         negative_prompt_input = excluded.negative_prompt_input,
         seed_node = excluded.seed_node,
         seed_input = excluded.seed_input,
+        reference_image_node = excluded.reference_image_node,
+        reference_image_input = excluded.reference_image_input,
         output_node_ids_json = excluded.output_node_ids_json,
         default_for_tiers_json = excluded.default_for_tiers_json,
         status = excluded.status,
@@ -1779,6 +1787,8 @@ export function upsertComfyWorkflow(
     input.negativePromptInput ?? null,
     input.seedNode ?? null,
     input.seedInput ?? null,
+    input.referenceImageNode ?? null,
+    input.referenceImageInput ?? null,
     JSON.stringify(input.outputNodeIds ?? []),
     JSON.stringify(input.defaultForTiers ?? []),
     input.status ?? "draft",

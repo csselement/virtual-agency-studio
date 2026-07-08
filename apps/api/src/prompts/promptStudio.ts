@@ -123,11 +123,12 @@ export function composePromptRecipe(
   const appearance = character.appearanceProfiles[0];
   const brief = input.contentBriefId ? getContentBrief(db, input.contentBriefId) : undefined;
   const platformPersona = character.platformPersonas.find((persona) => persona.platform.toLowerCase() === input.platform.toLowerCase());
+  const scene = [brief?.visual_direction, brief?.caption_angle, brief?.desired_outputs].filter(Boolean).join("\n") || input.scene;
   const blocks = {
     characterCore: `${character.name}: ${character.summary ?? "Synthetic creator in Virtual Agency Studio."}`,
     constitution: constitution?.body ?? "No active constitution.",
     appearance: appearance?.body ?? "No appearance bible.",
-    scene: input.scene,
+    scene,
     platform: platformPersona?.body ?? `${input.platform} platform persona.`,
     campaign: brief?.goal ?? "No campaign goal.",
     negativePrompt: "identity drift, inconsistent face, undisclosed real-world claims, low-quality hands, extra limbs"

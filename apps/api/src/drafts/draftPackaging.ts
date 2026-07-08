@@ -4,6 +4,7 @@ import type { ApiConfig } from "../config";
 import type { AppDatabase } from "../db/database";
 import {
   getAsset,
+  getCharacterDetail,
   getContentBrief,
   getDraft,
   getPromptRecipe,
@@ -13,6 +14,9 @@ import {
   insertPublishingPackage,
   listPlatformVariants,
   updateDraftStatus,
+  type AssetSummary,
+  type CharacterDetail,
+  type ContentBrief,
   type DraftSummary
 } from "../db/repositories";
 import { RunService } from "../runs/runService";
@@ -30,12 +34,61 @@ function defaultHashtags(platform: string) {
   return "#syntheticmedia #virtualcreator";
 }
 
-function variantCaption(platform: string, title: string, briefGoal: string | null | undefined) {
-  const base = briefGoal ?? title;
-  if (platform === "tiktok") return `${base}\n\nA short visual loop built from a synthetic creator workflow.`;
-  if (platform === "threads") return `${base}\n\nProcess note: this is a synthetic image package prepared for manual review.`;
-  if (platform === "instagram") return `${base}\n\nQuiet visual system, clear disclosure, no automation posting.`;
-  return `${base}\n\nPrepared by Virtual Agency Studio.`;
+function tidySentence(value: string | null | undefined, fallback: string) {
+  const cleaned = (value ?? "")
+    .replace(/\s+/g, " ")
+    .replace(/\bpost package\b/gi, "")
+    .replace(/\bmanual review\b/gi, "")
+    .replace(/\bno automatic posting\b/gi, "")
+    .replace(/\bapprove_for_draft\b/gi, "")
+    .replace(/\bready-to-post\b/gi, "composed")
+    .replace(/\bplatform-ready\b/gi, "composed")
+    .trim();
+  if (!cleaned) return fallback;
+  return cleaned.endsWith(".") || cleaned.endsWith("!") || cleaned.endsWith("?") ? cleaned : `${cleaned}.`;
+}
+
+function extractSceneFromPrompt(prompt: string | null | undefined) {
+  const match = prompt?.match(/SCENE\s*\n([\s\S]*?)(?:\n\n[A-Z][A-Z ]+\n|$)/);
+  return match?.[1]
+    ?.split("\n")
+    .map((line) => line.trim())
+    .find(Boolean);
+}
+
+function audienceScene(asset: AssetSummary, brief: ContentBrief | undefined) {
+  const scene = brief?.visual_direction ?? extractSceneFromPrompt(asset.original_prompt) ?? asset.latestAnalysis?.alt_text;
+  return tidySentence(scene, "A quiet working moment with visible notes, texture, and intent.");
+}
+
+function audienceAngle(brief: ContentBrief | undefined, character: CharacterDetail | undefined) {
+  const fromBrief = brief?.caption_angle && !/caption for|caption variants|platform-ready|synthetic media/i.test(brief.caption_angle) ? brief.caption_angle : null;
+  const voice = character?.voiceGuides[0]?.body;
+  return tidySentence(fromBrief ?? voice, "Small decisions, made visible.");
+}
+
+function variantCaption(platform: string, asset: AssetSummary, brief: ContentBrief | undefined, character: CharacterDetail | undefined) {
+  const name = character?.name ?? "the character";
+  const scene = audienceScene(asset, brief);
+  const angle = audienceAngle(brief, character);
+
+  if (platform === "instagram") {
+    return `${scene}\n\n${name} keeps the frame quiet so the next decision can stand out. ${angle}`;
+  }
+  if (platform === "threads") {
+    return `${scene}\n\nThe useful part is the rhythm: what gets kept, what gets removed, and what becomes clear enough to act on.`;
+  }
+  if (platform === "tiktok") {
+    return `${scene}\n\nA quick visual beat from ${name}'s working rhythm: edited tools, calm focus, next step in view.`;
+  }
+  return `${scene}\n\n${name} in a composed working moment, built around clarity, restraint, and follow-through.`;
+}
+
+function readinessNote(asset: AssetSummary) {
+  const action = asset.latestAnalysis?.recommended_action;
+  if (action === "revise_prompt") return "Needs prompt refinement before this copy is used.";
+  if (action === "approve_for_draft") return "Ready for final caption review and publishing approval.";
+  return "Review caption, disclosure, and platform fit before publishing.";
 }
 
 export function createDraftPackageRun(db: AppDatabase, config: ApiConfig, runService: RunService, assetId: string) {
@@ -47,6 +100,7 @@ export function createDraftPackageRun(db: AppDatabase, config: ApiConfig, runSer
   if (!asset.character_id) throw new Error("Asset is missing character lineage.");
   const recipe = asset.prompt_recipe_id ? getPromptRecipe(db, asset.prompt_recipe_id) : undefined;
   const brief = recipe?.content_brief_id ? getContentBrief(db, recipe.content_brief_id) : undefined;
+  const character = getCharacterDetail(db, asset.character_id);
   const analysis = asset.latestAnalysis;
   const title = `Post package for ${asset.id.replace("asset_", "").slice(0, 8)}`;
   const summary = brief?.goal ?? analysis?.summary ?? "Draft created from approved image asset.";
@@ -71,14 +125,14 @@ export function createDraftPackageRun(db: AppDatabase, config: ApiConfig, runSer
       draftId: draft.id,
       platform,
       postFormat: platform === "threads" ? "text_with_image" : "single_image",
-      caption: variantCaption(platform, title, brief?.goal),
+      caption: variantCaption(platform, asset, brief, character),
       hashtags: defaultHashtags(platform),
       altText: analysis?.alt_text ?? `Synthetic creator image for ${title}.`,
-      disclosureText: "AI-generated synthetic media. No automatic posting performed.",
+      disclosureText: "AI-generated synthetic media.",
       aiGeneratedFlag: 1,
       paidPartnershipFlag: 0,
       brandContentFlag: 0,
-      notes: analysis?.recommended_action ?? "Manual review required before publishing.",
+      notes: readinessNote(asset),
       status: "draft",
       metadata: { analysisSummary: analysis?.summary ?? null, contentBriefId: brief?.id ?? null }
     });

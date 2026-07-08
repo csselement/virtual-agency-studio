@@ -1,4 +1,7 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+import { mkdtempSync, rmSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { tmpdir } from "node:os";
 import {
   ComfyUICloudImageGenerationProvider,
   HermesImageGenerationProvider,
@@ -87,7 +90,7 @@ describe("mock providers", () => {
     const fetchMock = vi
       .spyOn(globalThis, "fetch")
       .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: "job_123", node_errors: {} }), { status: 200 }))
-      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "completed" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "success" }), { status: 200 }))
       .mockResolvedValueOnce(
         new Response(
           JSON.stringify({
@@ -120,6 +123,94 @@ describe("mock providers", () => {
     expect(fetchMock).toHaveBeenCalledTimes(4);
     expect(result.status).toBe("completed");
     expect(result.metadata.b64_json).toBe(Buffer.from("png").toString("base64"));
+  });
+
+  it("uploads a Comfy Cloud reference image and injects the uploaded filename into the workflow", async () => {
+    const tempDir = mkdtempSync(join(tmpdir(), "vas-comfy-ref-"));
+    const referencePath = join(tempDir, "reference.png");
+    writeFileSync(referencePath, Buffer.from("png"));
+    const fetchMock = vi
+      .spyOn(globalThis, "fetch")
+      .mockResolvedValueOnce(new Response(JSON.stringify({ name: "uploaded-reference.png", type: "input", subfolder: "" }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ prompt_id: "job_456", node_errors: {} }), { status: 200 }))
+      .mockResolvedValueOnce(new Response(JSON.stringify({ status: "success" }), { status: 200 }))
+      .mockResolvedValueOnce(
+        new Response(
+          JSON.stringify({
+            id: "job_456",
+            outputs: {
+              "5": { images: [{ filename: "VAS_00001_.png", type: "output", subfolder: "" }] }
+            }
+          }),
+          { status: 200 }
+        )
+      )
+      .mockResolvedValueOnce(new Response(Buffer.from("png"), { status: 200, headers: { "content-type": "image/png" } }));
+    const provider = new ComfyUICloudImageGenerationProvider({
+      baseUrl: "https://cloud.comfy.org",
+      apiKey: "test-key",
+      generationPath: "/api/prompt",
+      workflowPayload: {
+        "2": { inputs: { positive: "old", negative: "old" }, class_type: "Efficient Loader" },
+        "4": { inputs: { seed: 1 }, class_type: "KSampler (Efficient)" },
+        "5": { inputs: { filename_prefix: "VirtualAgency" }, class_type: "SaveImage" },
+        "22": { inputs: { image: "placeholder.png", upload: "image" }, class_type: "LoadImage" }
+      },
+      workflowMappings: {
+        positivePromptNode: "2",
+        positivePromptInput: "positive",
+        negativePromptNode: "2",
+        negativePromptInput: "negative",
+        seedNode: "4",
+        seedInput: "seed",
+        referenceImageNode: "22",
+        referenceImageInput: "image",
+        outputNodeIds: ["5"]
+      },
+      pollIntervalMs: 1,
+      maxPollAttempts: 1
+    });
+
+    try {
+      const result = await provider.generateImage({
+        prompt: "new prompt",
+        negativePrompt: "low quality",
+        referenceImageUrl: "https://test.local/api/characters/char_x/reference-images/ref_1/file",
+        referenceImageIds: ["ref_1"],
+        referenceImages: [{ id: "ref_1", path: referencePath, originalName: "identity.png", mimeType: "image/png" }]
+      });
+
+      expect(fetchMock.mock.calls[0]?.[0]).toBe("https://cloud.comfy.org/api/upload/image");
+      const submitted = JSON.parse(String(fetchMock.mock.calls[1]?.[1]?.body));
+      expect(submitted.prompt["2"].inputs.positive).toBe("new prompt");
+      expect(submitted.prompt["2"].inputs.negative).toBe("low quality");
+      expect(submitted.prompt["22"].inputs.image).toBe("uploaded-reference.png");
+      expect(submitted.extra_data.uploaded_reference.name).toBe("uploaded-reference.png");
+      expect(submitted.extra_data.reference_image_ids).toEqual(["ref_1"]);
+      expect(submitted.extra_data.reference_image_source).toBeUndefined();
+      expect(submitted.extra_data.reference_image_url).toBe("https://test.local/api/characters/char_x/reference-images/ref_1/file");
+      expect(result.status).toBe("completed");
+      expect(result.metadata.uploadedReference).toMatchObject({ name: "uploaded-reference.png", type: "input" });
+    } finally {
+      rmSync(tempDir, { recursive: true, force: true });
+    }
+  });
+
+  it("fails Comfy Cloud reference workflows before submission when no reference image is provided", async () => {
+    const fetchMock = vi.spyOn(globalThis, "fetch");
+    const provider = new ComfyUICloudImageGenerationProvider({
+      baseUrl: "https://cloud.comfy.org",
+      apiKey: "test-key",
+      generationPath: "/api/prompt",
+      workflowPayload: {
+        "5": { inputs: { filename_prefix: "VirtualAgency" }, class_type: "SaveImage" },
+        "22": { inputs: { image: "placeholder.png" }, class_type: "LoadImage" }
+      },
+      workflowMappings: { referenceImageNode: "22", referenceImageInput: "image", outputNodeIds: ["5"] }
+    });
+
+    await expect(provider.generateImage({ prompt: "demo" })).rejects.toThrow("requires an approved character reference image");
+    expect(fetchMock).not.toHaveBeenCalled();
   });
 
   it("submits and polls WaveSpeed image generation", async () => {

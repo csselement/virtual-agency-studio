@@ -157,6 +157,8 @@ export function getComfyImageGenerationProvider(settings: ProviderSettings, db: 
           negativePromptInput: workflow.negative_prompt_input ?? undefined,
           seedNode: workflow.seed_node ?? undefined,
           seedInput: workflow.seed_input ?? undefined,
+          referenceImageNode: workflow.reference_image_node ?? undefined,
+          referenceImageInput: workflow.reference_image_input ?? undefined,
           outputNodeIds: workflow.output_node_ids
         }
       : undefined

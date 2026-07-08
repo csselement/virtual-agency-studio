@@ -414,20 +414,32 @@ export async function runDailyActivityAutomation(
   return { run: runService.updateRunStatus(run.id, "needs_review"), candidates, selectedCandidate, promptRecipe: recipe, assets: analyzedAssets, analyses, draft: draftResult.draft };
 }
 
+export interface CandidateImageSuffixInput {
+  count?: number;
+  promptSuffixes?: string[];
+}
+
 export async function generateImageCandidatesForPrompt(
   db: AppDatabase,
   config: ApiConfig,
   runService: RunService,
   promptRecipeId: string,
-  count?: number
+  options: CandidateImageSuffixInput = {}
 ) {
   const recipe = getPromptRecipe(db, promptRecipeId);
   if (!recipe) throw new Error(`Prompt recipe not found: ${promptRecipeId}`);
   const settings = getAutomationSettings(db, config);
-  const total = clampImages(count ?? settings.maxImagesPerRun);
+  const count = clampImages(options.count ?? settings.maxImagesPerRun);
+  const customSuffixes = Array.isArray(options.promptSuffixes)
+    ? options.promptSuffixes.map((value) => value?.trim()).filter(Boolean).slice(0, 4)
+    : [];
+  const suffixes =
+    customSuffixes.length > 0
+      ? customSuffixes.slice(0, count)
+      : Array.from({ length: count }, (_, index) => `\n\nMANUAL AUTOMATION VARIANT ${index + 1}`);
   const results = [];
-  for (let index = 0; index < total; index += 1) {
-    results.push(await generateImageFromPromptRecipe(db, config, runService, promptRecipeId, `\n\nMANUAL AUTOMATION VARIANT ${index + 1}`));
+  for (const suffix of suffixes) {
+    results.push(await generateImageFromPromptRecipe(db, config, runService, promptRecipeId, suffix));
   }
   return { promptRecipeId, results };
 }
