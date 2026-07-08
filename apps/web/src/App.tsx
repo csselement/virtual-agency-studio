@@ -946,6 +946,34 @@ function outputReviewReasons(draft: Draft | null, variant: PlatformVariant | nul
   return reasons;
 }
 
+function outputReviewHappened(draft: Draft | null, variant: PlatformVariant | null) {
+  if (!draft) return "Select an output to review.";
+  const variantCount = draft.variants?.length ?? 0;
+  const assetPhrase = draft.asset ? "an image asset" : "a copy-only output";
+  const variantPhrase = variantCount === 1 ? "1 platform variant" : `${variantCount} platform variants`;
+  const platformPhrase = variant ? ` for ${platformLabel(variant.platform)}` : "";
+  return `The system prepared ${assetPhrase}${variantCount ? ` with ${variantPhrase}` : ""}${platformPhrase}.`;
+}
+
+function outputDecisionPrompt(draft: Draft | null) {
+  if (!draft) return "Choose an output before deciding.";
+  if (draft.status === "needs_review") return "Approve, request revision, reject, or edit the caption.";
+  if (draft.status === "approved") return "Export the package or edit copy before export.";
+  if (draft.status === "exported") return "Record manual publishing once the post is live.";
+  if (draft.status === "published") return "No approval is needed. Monitor feedback when it arrives.";
+  if (draft.status === "rejected") return "Decide whether to create a revised output.";
+  return "Choose the next workflow action.";
+}
+
+function outputNextStep(draft: Draft | null, hasExport: boolean, publishEvent: PublishingEvent | undefined) {
+  if (!draft) return "Selected outputs show their next workflow step here.";
+  if (publishEvent || draft.status === "published") return "Feedback and learnings move to Insights.";
+  if (draft.status === "exported" || hasExport) return "Publishing ledger captures the final URL and notes.";
+  if (draft.status === "approved") return "Export creates a local publishing package for the queue.";
+  if (draft.status === "rejected") return "Rejected outputs stay available in Review history.";
+  return "Approved assets move to the publishing queue.";
+}
+
 function outputDebugPayload(draft: Draft, variant: PlatformVariant | null) {
   return {
     draftId: draft.id,
@@ -3685,6 +3713,9 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   const canPublishDraft = draftStage === "exported" || hasExport;
   const recommendation = outputRecommendation(selectedDraft, selectedVariant);
   const reviewReasons = outputReviewReasons(selectedDraft, selectedVariant);
+  const whatHappened = outputReviewHappened(selectedDraft, selectedVariant);
+  const decisionPrompt = outputDecisionPrompt(selectedDraft);
+  const nextStep = outputNextStep(selectedDraft, hasExport, publishEvent);
   const stageActionLabel = !selectedDraft
     ? "Select draft"
     : canReviewDraft
@@ -3784,15 +3815,29 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
               ) : (
                 <EmptyState title="No asset preview" body="This output has copy only." />
               )}
-              <div className="review-recommendation">
-                <span>Recommendation</span>
-                <strong>{recommendation}</strong>
-              </div>
-              <div className="review-reasons">
-                <span>Why</span>
-                <ul>
-                  {reviewReasons.map((reason) => <li key={reason}>{reason}</li>)}
-                </ul>
+              <div className="review-decision-packet">
+                <div className="review-packet-item">
+                  <span>What happened?</span>
+                  <p>{whatHappened}</p>
+                </div>
+                <div className="review-packet-item review-packet-recommendation">
+                  <span>What does it recommend?</span>
+                  <strong>{recommendation}</strong>
+                </div>
+                <div className="review-packet-item review-packet-reasons">
+                  <span>Why?</span>
+                  <ul>
+                    {reviewReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                  </ul>
+                </div>
+                <div className="review-packet-item">
+                  <span>What do I need to decide?</span>
+                  <p>{decisionPrompt}</p>
+                </div>
+                <div className="review-packet-item">
+                  <span>What happens next?</span>
+                  <p>{nextStep}</p>
+                </div>
               </div>
               <div className="draft-primary-actions review-actions" aria-label={stageActionLabel}>
                 {canReviewDraft && (

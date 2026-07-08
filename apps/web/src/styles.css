@@ -2747,8 +2747,12 @@ h1 {
   object-fit: contain;
 }
 
-.review-recommendation,
-.review-reasons {
+.review-decision-packet {
+  display: grid;
+  gap: 10px;
+}
+
+.review-packet-item {
   display: grid;
   gap: 8px;
   min-width: 0;
@@ -2758,8 +2762,7 @@ h1 {
   background: #f8f8f2;
 }
 
-.review-recommendation > span,
-.review-reasons > span,
+.review-packet-item > span,
 .review-supporting-grid span {
   color: #65736f;
   font-size: 12px;
@@ -2767,13 +2770,20 @@ h1 {
   text-transform: uppercase;
 }
 
-.review-recommendation > strong {
+.review-packet-item p {
+  margin: 0;
+  color: #43534e;
+  font-size: 14px;
+  line-height: 1.45;
+}
+
+.review-packet-recommendation > strong {
   color: var(--color-heading);
   font-size: 20px;
   line-height: 1.25;
 }
 
-.review-reasons ul {
+.review-packet-reasons ul {
   display: grid;
   gap: 6px;
   margin: 0;
