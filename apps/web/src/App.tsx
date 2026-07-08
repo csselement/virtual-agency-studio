@@ -900,6 +900,71 @@ function reviewItemLabel(run: RunSummary) {
   return title;
 }
 
+function outputRecommendation(draft: Draft | null, variant: PlatformVariant | null) {
+  if (!draft) return "Select an output to review.";
+  const analysis = draft.asset?.latestAnalysis;
+  const recommendedAction = analysis?.recommended_action?.toLowerCase() ?? "";
+  if (draft.status === "approved") return "Ready to export for publishing.";
+  if (draft.status === "exported") return "Ready to record manual publishing.";
+  if (draft.status === "published") return "Published and ready for feedback.";
+  if (draft.status === "rejected") return "Rejected. Start a revised output from Create or Library.";
+  if (recommendedAction.includes("reject") || recommendedAction.includes("regenerate") || (analysis?.quality_issues.length ?? 0) > 0) {
+    return "Request revision before approval.";
+  }
+  if (variant?.caption && variant.caption.length < 80) return "Approve with minor caption edit.";
+  return "Approve after a quick caption pass.";
+}
+
+function outputReviewReasons(draft: Draft | null, variant: PlatformVariant | null) {
+  if (!draft) return [];
+  const analysis = draft.asset?.latestAnalysis;
+  const reasons: string[] = [];
+  if (analysis?.identity_match) {
+    reasons.push(`${analysis.identity_match} character style`);
+  } else {
+    reasons.push("Character fit is ready for human judgment");
+  }
+  if (analysis?.quality_issues.length) {
+    reasons.push(`Visual issue to check: ${analysis.quality_issues[0]}`);
+  } else {
+    reasons.push("No obvious visual artifacts flagged");
+  }
+  if (variant?.platform && analysis?.platform_fit.includes(variant.platform)) {
+    reasons.push(`Good fit for ${platformLabel(variant.platform)}`);
+  } else if (variant?.platform) {
+    reasons.push(`Review fit for ${platformLabel(variant.platform)}`);
+  } else {
+    reasons.push("Platform fit should be confirmed");
+  }
+  if (variant?.caption && variant.caption.length < 80) {
+    reasons.push("Caption tone may need more specificity");
+  } else if (variant?.caption) {
+    reasons.push("Caption is present for final edit");
+  } else {
+    reasons.push("Caption needs to be written");
+  }
+  return reasons;
+}
+
+function outputDebugPayload(draft: Draft, variant: PlatformVariant | null) {
+  return {
+    draftId: draft.id,
+    runId: draft.run_id,
+    assetId: draft.asset_id,
+    promptRecipeId: draft.prompt_recipe_id,
+    contentBriefId: draft.content_brief_id,
+    assetProvider: draft.asset?.provider,
+    assetPrompt: draft.asset?.original_prompt,
+    assetNegativePrompt: draft.asset?.negative_prompt,
+    assetStatus: draft.asset?.status,
+    assetRunId: draft.asset?.run_id,
+    analysis: draft.asset?.latestAnalysis,
+    selectedVariant: variant,
+    packages: draft.packages,
+    publishingEvents: draft.publishingEvents
+  };
+}
+
 function nextWorkflowStage(stageId: WorkflowStageId) {
   const index = workflowStageModel.findIndex((stage) => stage.id === stageId);
   return workflowStageModel[index + 1] ?? workflowStageModel[0];
@@ -3459,6 +3524,7 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [draftActionPending, setDraftActionPending] = useState<string | null>(null);
+  const [copyEditorOpen, setCopyEditorOpen] = useState(false);
   const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? drafts[0] ?? null;
   const selectedVariant = selectedDraft?.variants?.find((variant) => variant.platform === selectedPlatform) ?? selectedDraft?.variants?.[0] ?? null;
   const variantDirty = Boolean(
@@ -3544,13 +3610,13 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
     });
   }
 
-  async function reviewDraft(statusValue: string) {
+  async function reviewDraft(statusValue: string, reason = "Manual Output Review action.", successMessage?: string, pendingKey = statusValue) {
     if (!selectedDraft) return;
     setError(null); setMessage(null);
-    setDraftActionPending(statusValue);
+    setDraftActionPending(pendingKey);
     try {
-      await patchJson(`/api/drafts/${selectedDraft.id}`, { status: statusValue, reason: "Manual Draft Review Desk action." });
-      setMessage(`Draft marked ${statusValue}.`);
+      await patchJson(`/api/drafts/${selectedDraft.id}`, { status: statusValue, reason });
+      setMessage(successMessage ?? `Output marked ${statusValue}.`);
       await load();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to review draft.");
@@ -3617,6 +3683,8 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   const canReviewDraft = draftStage === "needs_review";
   const canExportDraft = draftStage === "approved";
   const canPublishDraft = draftStage === "exported" || hasExport;
+  const recommendation = outputRecommendation(selectedDraft, selectedVariant);
+  const reviewReasons = outputReviewReasons(selectedDraft, selectedVariant);
   const stageActionLabel = !selectedDraft
     ? "Select draft"
     : canReviewDraft
@@ -3706,34 +3774,60 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
             </button>
           ))}</div>}
         </article>
-        <article className="settings-preview draft-detail-panel">
-          <div className="section-heading"><h2>Detail</h2></div>
-          {!selectedDraft ? <EmptyState title="No draft selected" body="Select a draft to edit variants." /> : (
-            <div className="asset-detail">
+        <article className="settings-preview draft-detail-panel output-review-panel">
+          <div className="section-heading"><h2>Output Review</h2></div>
+          {!selectedDraft ? <EmptyState title="No output selected" body="Select an output to review." /> : (
+            <div className="asset-detail output-review-detail">
               <div className="score-row"><span className={statusClass(selectedDraft.status)}>{selectedDraft.status.replaceAll("_", " ")}</span><span>{characterName(selectedDraft.character_id)}</span></div>
-              <p className="action-copy">{selectedDraft.summary}</p>
-              {selectedDraft.asset?.latestAnalysis && <div className="analysis-panel"><strong>Analysis summary</strong><p>{selectedDraft.asset.latestAnalysis.identity_match} identity match · identity {selectedDraft.asset.latestAnalysis.identity_score} · quality {selectedDraft.asset.latestAnalysis.quality_score}</p></div>}
-              <div className="draft-primary-actions" aria-label={stageActionLabel}>
+              {selectedDraft.asset ? (
+                <img className="review-asset-preview" src={`${apiBaseUrl()}/api/assets/${selectedDraft.asset.id}/file`} alt={selectedDraft.asset.latestAnalysis?.alt_text ?? selectedDraft.title} />
+              ) : (
+                <EmptyState title="No asset preview" body="This output has copy only." />
+              )}
+              <div className="review-recommendation">
+                <span>Recommendation</span>
+                <strong>{recommendation}</strong>
+              </div>
+              <div className="review-reasons">
+                <span>Why</span>
+                <ul>
+                  {reviewReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                </ul>
+              </div>
+              <div className="draft-primary-actions review-actions" aria-label={stageActionLabel}>
                 {canReviewDraft && (
                   <>
-                    <button className="primary-action" type="button" onClick={() => reviewDraft("approved")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "approved"}>{draftActionPending === "approved" ? "Approving" : "Approve"}</button>
-                    <button type="button" onClick={() => reviewDraft("rejected")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "rejected"}>{draftActionPending === "rejected" ? "Rejecting" : "Reject draft"}</button>
+                    <button className="primary-action" type="button" onClick={() => reviewDraft("approved", "Approved from Output Review.", "Output approved.")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "approved"}>{draftActionPending === "approved" ? "Approving" : "Approve"}</button>
+                    <button type="button" onClick={() => reviewDraft("rejected", "Revision requested from Output Review.", "Revision requested.", "revision")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "revision"}>{draftActionPending === "revision" ? "Requesting" : "Request revision"}</button>
+                    <button type="button" onClick={() => reviewDraft("rejected", "Rejected from Output Review.", "Output rejected.")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "rejected"}>{draftActionPending === "rejected" ? "Rejecting" : "Reject"}</button>
                   </>
                 )}
                 {canExportDraft && (
-                  <>
-                    <button className="primary-action" type="button" onClick={exportDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "export"}>{draftActionPending === "export" ? "Exporting" : "Export package"}</button>
-                    <button type="button" onClick={() => reviewDraft("rejected")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "rejected"}>{draftActionPending === "rejected" ? "Rejecting" : "Reject draft"}</button>
-                  </>
+                  <button className="primary-action" type="button" onClick={exportDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "export"}>{draftActionPending === "export" ? "Exporting" : "Export package"}</button>
                 )}
                 {canPublishDraft && !publishEvent && (
                   <button className="primary-action" type="button" onClick={publishDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "publish"}>{draftActionPending === "publish" ? "Publishing" : "Mark published"}</button>
                 )}
                 {publishEvent && <button type="button" onClick={() => navigate("/calendar")}>Open ledger</button>}
+                <button type="button" onClick={() => setCopyEditorOpen(true)}>Edit caption</button>
               </div>
-              {selectedDraft.asset && <img src={`${apiBaseUrl()}/api/assets/${selectedDraft.asset.id}/file`} alt={selectedDraft.asset.latestAnalysis?.alt_text ?? selectedDraft.title} />}
-              <details className="editor-drawer draft-variant-drawer">
-                <summary>Platform copy</summary>
+              <details className="editor-drawer review-supporting-details">
+                <summary>Supporting details</summary>
+                <div className="review-supporting-grid">
+                  <div><span>Status</span><strong>{selectedDraft.status.replaceAll("_", " ")}</strong></div>
+                  <div><span>Character</span><strong>{characterName(selectedDraft.character_id)}</strong></div>
+                  <div><span>Platform</span><strong>{selectedVariant ? platformLabel(selectedVariant.platform) : "Not selected"}</strong></div>
+                  <div><span>Summary</span><strong>{selectedDraft.summary ?? "No summary"}</strong></div>
+                </div>
+                {selectedDraft.asset?.latestAnalysis && (
+                  <div className="analysis-panel">
+                    <strong>Analysis summary</strong>
+                    <p>{selectedDraft.asset.latestAnalysis.identity_match} identity match · identity {selectedDraft.asset.latestAnalysis.identity_score} · quality {selectedDraft.asset.latestAnalysis.quality_score} · story fit {selectedDraft.asset.latestAnalysis.story_fit_score}</p>
+                  </div>
+                )}
+              </details>
+              <details className="editor-drawer draft-variant-drawer" open={copyEditorOpen} onToggle={(event) => setCopyEditorOpen(event.currentTarget.open)}>
+                <summary>Caption and platform copy</summary>
                 <div className="tab-row">{selectedDraft.variants?.map((variant) => (
                   <button key={variant.id} type="button" className={variant.platform === selectedPlatform ? "selected" : ""} onClick={() => setSelectedPlatform(variant.platform)}>
                     <span className={`platform-inline ${platformClass(variant.platform)}`}>{platformIcon(variant.platform, 14)}{platformLabel(variant.platform)}</span>
@@ -3762,6 +3856,10 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
                   <button type="button" onClick={publishDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "publish"}>{draftActionPending === "publish" ? "Publishing" : "Mark published"}</button>
                 </div>
                 {selectedDraft.packages && selectedDraft.packages.length > 0 && <div className="compact-list"><div><strong>Latest export</strong><small>{selectedDraft.packages[0].files.join(", ")}</small></div></div>}
+              </details>
+              <details className="raw-details review-debug-drawer">
+                <summary>Debug details</summary>
+                <pre>{JSON.stringify(outputDebugPayload(selectedDraft, selectedVariant), null, 2)}</pre>
               </details>
             </div>
           )}
