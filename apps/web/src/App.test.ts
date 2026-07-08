@@ -20,13 +20,12 @@ describe("web app config", () => {
     expect(workModeModel.map((mode) => [mode.id, mode.path])).toEqual([
       ["command", "/"],
       ["create", "/create"],
-      ["runs", "/runs"],
       ["review", "/review"],
       ["calendar", "/calendar"],
       ["library", "/library"],
+      ["talent", "/talent"],
       ["insights", "/insights"],
-      ["settings", "/settings"],
-      ["help", "/help"]
+      ["settings", "/settings"]
     ]);
   });
 

@@ -395,7 +395,7 @@ interface AppData {
 
 type WorkflowStageId = "heartbeat" | "birth" | "production" | "review" | "publishing" | "feedback";
 type WorkflowStageStatus = "blocked" | "ready" | "attention" | "complete";
-type WorkModeId = "command" | "create" | "runs" | "review" | "calendar" | "library" | "insights" | "settings" | "help";
+type WorkModeId = "command" | "create" | "runs" | "review" | "calendar" | "library" | "talent" | "insights" | "settings" | "help";
 
 interface WorkflowStageSummary {
   id: WorkflowStageId;
@@ -415,11 +415,11 @@ export const workflowStageModel: Array<{
   path: string;
   icon: PhosphorIconComponent;
 }> = [
-  { id: "heartbeat", label: "Command", detail: "Attention", path: "/", icon: Pulse },
+  { id: "heartbeat", label: "Studio", detail: "Attention", path: "/", icon: Pulse },
   { id: "birth", label: "Create", detail: "Start work", path: "/create", icon: User },
   { id: "production", label: "Library", detail: "Source material", path: "/library", icon: Package },
   { id: "review", label: "Review", detail: "Human judgment", path: "/review", icon: CheckSquare },
-  { id: "publishing", label: "Calendar / Queue", detail: "Publishing cadence", path: "/calendar", icon: CalendarBlank },
+  { id: "publishing", label: "Schedule", detail: "Publishing cadence", path: "/calendar", icon: CalendarBlank },
   { id: "feedback", label: "Insights", detail: "Learning loop", path: "/insights", icon: BookOpen }
 ];
 
@@ -430,18 +430,17 @@ export const workModeModel: Array<{
   path: string;
   icon: PhosphorIconComponent;
 }> = [
-  { id: "command", label: "Command", path: "/", detail: "Attention", icon: Pulse },
+  { id: "command", label: "Studio", path: "/", detail: "Attention", icon: Pulse },
   { id: "create", label: "Create", path: "/create", detail: "Start work", icon: MagicWand },
-  { id: "runs", label: "Runs", path: "/runs", detail: "Machine activity", icon: ClockCounterClockwise },
   { id: "review", label: "Review", path: "/review", detail: "Human judgment", icon: CheckSquare },
-  { id: "calendar", label: "Calendar / Queue", path: "/calendar", detail: "Cadence", icon: CalendarBlank },
+  { id: "calendar", label: "Schedule", path: "/calendar", detail: "Cadence", icon: CalendarBlank },
   { id: "library", label: "Library", path: "/library", detail: "Source material", icon: Package },
+  { id: "talent", label: "Talent", path: "/talent", detail: "Characters", icon: User },
   { id: "insights", label: "Insights", path: "/insights", detail: "Learning loop", icon: BookOpen },
-  { id: "settings", label: "Settings / System", path: "/settings", detail: "Tune machine", icon: Gear },
-  { id: "help", label: "Help", path: "/help", detail: "How VAS works", icon: Article }
+  { id: "settings", label: "Settings", path: "/settings", detail: "System controls", icon: Gear }
 ];
 
-export const supportNavPaths = workModeModel.filter((item) => item.id === "help").map((item) => item.path);
+export const supportNavPaths = ["/help"];
 
 const navItems = workModeModel;
 
@@ -797,7 +796,7 @@ function assetStatusLabel(status: string) {
 }
 
 function remapLegacyModePath(path: string) {
-  if (path === "/characters" || path.startsWith("/characters?")) return path.replace(/^\/characters/, "/create");
+  if (path === "/characters" || path.startsWith("/characters?")) return path.replace(/^\/characters/, "/talent");
   if (path === "/prompt-studio" || path.startsWith("/prompt-studio?")) return path.replace(/^\/prompt-studio/, "/create");
   if (path === "/assets" || path.startsWith("/assets?")) return path.replace(/^\/assets/, "/library");
   if (path === "/drafts" || path.startsWith("/drafts?")) return path.replace(/^\/drafts/, "/review");
@@ -807,11 +806,12 @@ function remapLegacyModePath(path: string) {
 
 function workModeActive(path: string, modeId: WorkModeId) {
   if (modeId === "command") return path === "/";
-  if (modeId === "create") return path === "/create" || path.startsWith("/characters") || path === "/prompt-studio";
+  if (modeId === "create") return path === "/create" || path === "/prompt-studio";
   if (modeId === "runs") return path === "/runs" || path.startsWith("/runs/");
   if (modeId === "review") return path === "/review" || path === "/drafts";
   if (modeId === "calendar") return path === "/calendar";
   if (modeId === "library") return path === "/library" || path === "/assets";
+  if (modeId === "talent") return path === "/talent" || path.startsWith("/characters");
   if (modeId === "insights") return path === "/insights" || path === "/feedback";
   if (modeId === "settings") return path === "/settings";
   if (modeId === "help") return path === "/help";
@@ -825,6 +825,7 @@ function stageSummaryForMode(data: AppData, modeId: WorkModeId) {
     review: "review",
     calendar: "publishing",
     library: "production",
+    talent: "birth",
     insights: "feedback"
   };
   if (modeId === "runs") {
@@ -969,9 +970,9 @@ function outputNextStep(draft: Draft | null, hasExport: boolean, publishEvent: P
   if (!draft) return "Selected outputs show their next workflow step here.";
   if (publishEvent || draft.status === "published") return "Feedback and learnings move to Insights.";
   if (draft.status === "exported" || hasExport) return "Publishing ledger captures the final URL and notes.";
-  if (draft.status === "approved") return "Export creates a local publishing package for the queue.";
+  if (draft.status === "approved") return "Export creates a local publishing package for Schedule.";
   if (draft.status === "rejected") return "Rejected outputs stay available in Review history.";
-  return "Approved assets move to the publishing queue.";
+  return "Approved assets move to Schedule.";
 }
 
 function outputDebugPayload(draft: Draft, variant: PlatformVariant | null) {
@@ -1324,14 +1325,14 @@ function HeartbeatDashboard({
       : setupCharacters[0]
         ? { label: "Continue setup", path: `/characters/${setupCharacters[0].id}` }
         : scheduledToday
-          ? { label: "Open queue", path: "/calendar" }
+          ? { label: "Open schedule", path: "/calendar" }
           : { label: "Start creating", path: "/create" };
 
   return (
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Command</span>
+          <span className="eyebrow">Studio</span>
           <h1>Virtual Agency Studio</h1>
         </div>
       </header>
@@ -1415,7 +1416,7 @@ function HeartbeatDashboard({
                 <dd>{nextWindow}</dd>
               </div>
             </dl>
-            <button type="button" onClick={() => navigate("/calendar")}>Open queue</button>
+            <button type="button" onClick={() => navigate("/calendar")}>Open schedule</button>
           </article>
         </div>
       </section>
@@ -1442,8 +1443,8 @@ function CreateModePage({
       label: "Character",
       value: data.characters.length,
       detail: latestCharacter ? `Continue ${displayModelName(latestCharacter.name)}` : "Create the first profile",
-      action: "Open character setup",
-      path: latestCharacter ? `/characters/${latestCharacter.id}` : "/characters"
+      action: "Open Talent",
+      path: latestCharacter ? `/characters/${latestCharacter.id}` : "/talent"
     },
     {
       label: "Content run",
@@ -1460,10 +1461,10 @@ function CreateModePage({
       path: "/library"
     },
     {
-      label: "Manual run",
+      label: "Automation",
       value: data.automationStatus?.schedulerEnabled ? "On" : "Off",
       detail: "Use supervised local automation",
-      action: "Open system controls",
+      action: "Open settings",
       path: "/settings"
     }
   ];
@@ -1474,7 +1475,7 @@ function CreateModePage({
         <div>
           <span className="eyebrow">Create mode</span>
           <h1>Create</h1>
-          <p>Start a character, campaign idea, asset, post package, or supervised machine run.</p>
+          <p>Start a character, campaign idea, asset, post package, or supervised creative workflow.</p>
         </div>
       </header>
 
@@ -1497,10 +1498,10 @@ function CreateModePage({
         <article className="machine-room">
           <div className="section-heading">
             <h2>Recent creation work</h2>
-            <button type="button" onClick={() => navigate("/runs")}>View runs</button>
+            <button type="button" onClick={() => navigate("/runs")}>View activity</button>
           </div>
           {creativeRuns.length === 0 ? (
-            <EmptyState title="No creative runs yet" body="Create a character, then start a content run from Prompt Studio." />
+            <EmptyState title="No creative activity yet" body="Create a character, then start a content workflow from Prompt Studio." />
           ) : (
             <div className="run-stack">
               {creativeRuns.slice(0, 6).map((run) => (
@@ -1597,12 +1598,12 @@ function RunsPage({
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Machine activity</span>
-          <h1>Runs</h1>
+          <span className="eyebrow">Debug</span>
+          <h1>Debug Runs</h1>
         </div>
       </header>
 
-      {loading && <div className="notice">Loading runs.</div>}
+      {loading && <div className="notice">Loading debug runs.</div>}
       {error && <div className="notice error">{error}</div>}
 
       <section className="timeline-control-layout" aria-label="Timeline control desk">
@@ -1654,7 +1655,7 @@ function RunsPage({
               <div className="dossier-heading">
                 <span>Run dossier</span>
               </div>
-              {!selectedRun ? <EmptyState title="No run selected" body="Runs appear here after automation starts." /> : (
+              {!selectedRun ? <EmptyState title="No debug run selected" body="Automation traces appear here after work starts." /> : (
                 <div className="run-dossier">
                   <div className="dossier-platform-row">
                     <span className="platform-mark platform-mark-system"><ClockCounterClockwise aria-hidden="true" size={16} weight="regular" /></span>
@@ -1854,7 +1855,7 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
       <div className="notice error">
         {error ?? "Run not found."}
         <button type="button" onClick={() => navigate("/runs")}>
-          Back to runs
+          Back to debug runs
         </button>
       </div>
     );
@@ -1875,9 +1876,9 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
       <header className="topbar page-heading">
         <div>
           <button className="text-button" type="button" onClick={() => navigate("/runs")}>
-            Back to runs
+            Back to debug runs
           </button>
-          <span className="eyebrow">Run control</span>
+          <span className="eyebrow">Debug run</span>
           <h1>{run.title}</h1>
         </div>
         <em className={statusClass(run.status)}>{run.status.replaceAll("_", " ")}</em>
@@ -1890,7 +1891,7 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
           <p>{currentStep(run, events)}</p>
           <div className="button-stack">
             {run.character_id && <button type="button" onClick={() => navigate(`/characters/${run.character_id}`)}>Character</button>}
-            <button type="button" onClick={() => navigate("/runs")}>All runs</button>
+            <button type="button" onClick={() => navigate("/runs")}>All debug runs</button>
           </div>
         </article>
         <div className="run-stat-grid">
@@ -2077,7 +2078,7 @@ function CharactersPage({
     }
     const fallbackId = data.characters[0]?.id ?? "";
     setSelectedCharacterId(fallbackId);
-    replaceRouteQuery("/characters", { selected: fallbackId || null });
+    replaceRouteQuery("/talent", { selected: fallbackId || null });
   }, [data.characters, selectedCharacterId]);
 
   useEffect(() => {
@@ -2085,7 +2086,7 @@ function CharactersPage({
       return;
     }
     setSelectedCharacterId(filteredCharacters[0].id);
-    replaceRouteQuery("/characters", { selected: filteredCharacters[0].id });
+    replaceRouteQuery("/talent", { selected: filteredCharacters[0].id });
   }, [filteredCharacters, selectedCharacterId]);
 
   async function createCharacter() {
@@ -2109,8 +2110,8 @@ function CharactersPage({
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Casting desk</span>
-          <h1>Casting</h1>
+          <span className="eyebrow">Talent desk</span>
+          <h1>Talent</h1>
         </div>
       </header>
 
@@ -2118,16 +2119,16 @@ function CharactersPage({
       {error && <div className="notice error">{error}</div>}
       <StageHandoff data={data} stageId="birth" navigate={navigate} />
 
-      <section className="roster-command roster-command--casting" aria-label="Character roster command">
+      <section className="roster-command roster-command--casting" aria-label="Talent roster command">
         <article>
-          <span>Cast</span>
+          <span>Talent</span>
           <strong>{data.characters.length}</strong>
-          <p>model files</p>
+          <p>profiles</p>
         </article>
         <article>
-          <span>Motion</span>
+          <span>Active work</span>
           <strong>{activeRunCount}</strong>
-          <p>active runs</p>
+          <p>in progress</p>
         </article>
         <article>
           <span>Review</span>
@@ -2157,7 +2158,7 @@ function CharactersPage({
       <section className="character-layout">
         <article className="machine-room casting-roster">
           <div className="section-heading">
-            <h2>Cast</h2>
+            <h2>Talent</h2>
             <span>{filteredCharacters.length}</span>
           </div>
           {data.characters.length === 0 ? (
@@ -2401,8 +2402,8 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
     <>
       <header className="topbar page-heading">
         <div>
-          <button className="text-button" type="button" onClick={() => navigate("/characters")}>
-            Back to characters
+          <button className="text-button" type="button" onClick={() => navigate("/talent")}>
+            Back to Talent
           </button>
         </div>
       </header>
@@ -2918,7 +2919,7 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
             <h2>No character</h2>
             <p>Create identity before composing prompts.</p>
             <div className="button-stack">
-              <button className="primary-action" type="button" onClick={() => navigate("/characters")}>Open Casting</button>
+              <button className="primary-action" type="button" onClick={() => navigate("/talent")}>Open Talent</button>
             </div>
           </article>
           <div className="concept-stat-grid">
@@ -3271,7 +3272,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
           overrideReason: overrideReason.trim() || undefined,
           contentTierOverride: contentTierOverride || undefined
         });
-        setMessage(`Image generation ${payload.run.status}. ${payload.asset ? "Asset stored locally." : "Check Runs for provider details."}`);
+        setMessage(`Image generation ${payload.run.status}. ${payload.asset ? "Asset stored locally." : "Check Debug Runs for provider details."}`);
         await loadAssets({ status: "", platformFit: "", query: "" });
         if (payload.asset) {
           setStatusFilter("");
@@ -3702,8 +3703,8 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   const runReviewCount = data.runs.filter((run) => run.status === "needs_review").length;
   const reviewQueues = [
     { label: "Drafts", count: allDrafts.filter((draft) => draft.status === "needs_review").length, detail: "copy and package decisions", path: "/drafts?status=needs_review" },
-    { label: "Runs", count: runReviewCount, detail: "automation gates", path: "/runs?status=needs_review" },
-    { label: "Identity", count: Math.max((reviewSummary?.count ?? 0) - runReviewCount - allDrafts.filter((draft) => draft.status === "needs_review").length, 0), detail: "proposal review", path: "/characters" }
+    { label: "Automations", count: runReviewCount, detail: "human gates", path: "/runs?status=needs_review" },
+    { label: "Talent", count: Math.max((reviewSummary?.count ?? 0) - runReviewCount - allDrafts.filter((draft) => draft.status === "needs_review").length, 0), detail: "proposal review", path: "/talent" }
   ];
   const publishEvent = selectedDraft?.publishingEvents?.find((event) => event.published_at || event.status === "published");
   const hasExport = Boolean(selectedDraft?.packages?.length);
@@ -4072,7 +4073,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
     <>
       <header className="topbar page-heading calendar-topbar">
         <div>
-          <h1>Calendar / Queue</h1>
+          <h1>Schedule</h1>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -4179,13 +4180,13 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
               ))}
             </div>
           </section>
-          <section className="review-queue-strip" aria-label="Review queue">
+          <section className="review-queue-strip" aria-label="Review list">
             <div className="section-heading">
-              <h2>Review queue ({reviewDrafts.length})</h2>
+              <h2>Review list ({reviewDrafts.length})</h2>
               <button type="button" onClick={() => navigate("/drafts")}>View all</button>
             </div>
             <div className="review-card-row">
-              {reviewDrafts.length === 0 ? <EmptyState title="Queue clear" body="No draft needs review." /> : reviewDrafts.map((draft, index) => (
+              {reviewDrafts.length === 0 ? <EmptyState title="Review list clear" body="No draft needs review." /> : reviewDrafts.map((draft, index) => (
                 <button className="review-mini-card" key={draft.id} type="button" onClick={() => navigate("/drafts")}>
                   {draft.asset?.id ? <img src={`${apiBaseUrl()}/api/assets/${draft.asset.id}/file`} alt="" /> : <span aria-hidden="true" />}
                   <strong><span className={`platform-inline ${platformClass(draft.variants?.[0]?.platform)}`}>{platformIcon(draft.variants?.[0]?.platform, 14)}{platformLabel(draft.variants?.[0]?.platform)}</span></strong>
@@ -4198,7 +4199,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
           </section>
           <section className="recent-runs-table" aria-label="Recent publishing runs">
             <div className="section-heading">
-              <h2>Recent runs</h2>
+              <h2>Recent activity</h2>
             </div>
             <table>
               <thead><tr><th>Run ID</th><th>Status</th><th>Character</th><th>Pipeline</th><th>Trigger</th><th>Started</th><th>Duration</th><th /></tr></thead>
@@ -4438,7 +4439,7 @@ function FeedbackPage({ data, navigate, title = "Insights" }: { data: AppData; n
               <div className="draft-primary-actions">
                 <button className="primary-action" type="button" onClick={submitFeedback}>Log feedback</button>
                 <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Run reflection</button>
-                <button type="button" onClick={() => navigate(selectedCharacter ? `/characters/${selectedCharacter.id}` : "/characters")}>Identity proposals</button>
+                <button type="button" onClick={() => navigate(selectedCharacter ? `/characters/${selectedCharacter.id}` : "/talent")}>Talent proposals</button>
               </div>
             </div>
           )}
@@ -4463,7 +4464,7 @@ function PlaceholderPage({ title }: { title: string }) {
 
 const helpWorkflow = [
   {
-    label: "Command",
+    label: "Studio",
     path: "/",
     intent: "Start here when you are unsure what needs attention.",
     operatorAction: "Check attention, running work, review-ready output, and blocked work."
@@ -4475,21 +4476,15 @@ const helpWorkflow = [
     operatorAction: "Choose the kind of work to start before dropping into a detailed tool."
   },
   {
-    label: "Runs",
-    path: "/runs",
-    intent: "Watch current and past machine activity.",
-    operatorAction: "Inspect status, progress, checkpoints, outcomes, and failed or waiting work."
-  },
-  {
     label: "Review",
     path: "/review",
     intent: "Judge generated output before it moves forward.",
     operatorAction: "Approve, revise, or reject output that is waiting on a human."
   },
   {
-    label: "Calendar / Queue",
+    label: "Schedule",
     path: "/calendar",
-    intent: "Plan publishing cadence and see queued content.",
+    intent: "Plan publishing cadence and see scheduled content.",
     operatorAction: "Inspect scheduled content, planned activity, and manual publishing state."
   },
   {
@@ -4497,6 +4492,12 @@ const helpWorkflow = [
     path: "/library",
     intent: "Find reusable source material and approved outputs.",
     operatorAction: "Browse characters, assets, prompts, references, and production-ready material."
+  },
+  {
+    label: "Talent",
+    path: "/talent",
+    intent: "Manage characters and identity decisions.",
+    operatorAction: "Review talent setup, appearance, voice, canon, memory, and proposals."
   },
   {
     label: "Insights",
@@ -4507,9 +4508,9 @@ const helpWorkflow = [
 ];
 
 const helpSupport = [
-  ["Settings / System", "Configure provider routing, Comfy workflows, automation supervision, and manual run tools."],
-  ["Deep character pages", "Edit identity law, references, voice, memory, and proposals after entering Create."],
-  ["Run detail", "Trace RunEvents, provider jobs, artifacts, decisions, and failures without changing publishing state."]
+  ["Settings", "Configure System, Automation, Providers, and Debug tools."],
+  ["Talent detail pages", "Edit identity law, references, voice, memory, and proposals after entering Talent."],
+  ["Debug run detail", "Trace RunEvents, provider jobs, artifacts, decisions, and failures without changing publishing state."]
 ];
 
 function HelpPage({ navigate }: { navigate: (path: string) => void }) {
@@ -4537,9 +4538,9 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
             <span>First session</span>
             <ol>
               <li>Start in Create and choose the kind of work to begin.</li>
-              <li>Use Runs to watch the machine produce checkpoints and outcomes.</li>
+              <li>Use Studio to see current activity and anything needing attention.</li>
               <li>Use Review to approve, revise, or reject generated output.</li>
-              <li>Use Calendar / Queue to plan or record manual publishing.</li>
+              <li>Use Schedule to plan or record manual publishing.</li>
               <li>Use Insights to log response and review what the system learned.</li>
             </ol>
           </div>
@@ -4548,7 +4549,7 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
         <section className="help-principles" aria-label="System principles">
           <article>
             <span>01</span>
-            <strong>Runs are the audit trail</strong>
+            <strong>Debug runs are the audit trail</strong>
             <p>Every automated action should create readable RunEvents so an operator can inspect what happened and why.</p>
           </article>
           <article>
@@ -4662,7 +4663,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     outputNodeIds: "",
     defaultForTiers: "sfw_standard"
   });
-  const [settingsView, setSettingsView] = useState<SettingsView>("routing");
+  const [settingsView, setSettingsView] = useState<SettingsView>("workflows");
   const [workflowEditorOpen, setWorkflowEditorOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -4962,16 +4963,10 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
   const activeWorkflow = workflows.find((workflow) => workflow.id === workflowForm.id);
   const settingsTabs: Array<{ id: SettingsView; label: string; value: string | number; detail: string }> = [
     {
-      id: "routing",
-      label: "Routing",
-      value: settings.mockProviders ? "Mock" : "Live",
-      detail: `${configuredProviderCount} key${configuredProviderCount === 1 ? "" : "s"}`
-    },
-    {
       id: "workflows",
-      label: "Workflows",
+      label: "System",
       value: workflows.length,
-      detail: activeWorkflow?.name ?? "Comfy"
+      detail: activeWorkflow?.name ?? "Workflows"
     },
     {
       id: "automation",
@@ -4980,10 +4975,16 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       detail: `${automationStatus?.runsNeedingReview.length ?? 0} review`
     },
     {
+      id: "routing",
+      label: "Providers",
+      value: settings.mockProviders ? "Mock" : "Live",
+      detail: `${configuredProviderCount} key${configuredProviderCount === 1 ? "" : "s"}`
+    },
+    {
       id: "manual",
-      label: "Dispatch",
+      label: "Debug",
       value: characters.length,
-      detail: "Run console"
+      detail: "Manual tools"
     }
   ];
 
@@ -5103,8 +5104,8 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       <header className="topbar page-heading">
         <div>
           <span className="eyebrow">Local controls</span>
-          <h1>Settings / System</h1>
-          <p>Provider routing, automation gates, and manual dispatch.</p>
+          <h1>Settings</h1>
+          <p>System, automation, providers, and debug tools.</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -5116,7 +5117,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
           <p>Routing · gates · runs</p>
           <div className="button-stack">
             <button className="primary-action" type="button" onClick={() => navigate(runQuery("needs_review"))}>Open review gates</button>
-            <button type="button" onClick={() => navigate("/runs")}>Open runs</button>
+            <button type="button" onClick={() => navigate("/runs")}>Open debug runs</button>
           </div>
         </article>
         <div className="ops-stat-grid">
@@ -5417,7 +5418,7 @@ export function App() {
     if (runDetailMatch) {
       return <RunDetailPage runId={runDetailMatch[1]} navigate={navigate} />;
     }
-    if (path === "/characters") {
+    if (path === "/characters" || path === "/talent") {
       return <CharactersPage data={data} loading={loading} error={error} navigate={navigate} />;
     }
     if (characterDetailMatch) {
