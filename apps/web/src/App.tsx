@@ -395,6 +395,7 @@ interface AppData {
 
 type WorkflowStageId = "heartbeat" | "birth" | "production" | "review" | "publishing" | "feedback";
 type WorkflowStageStatus = "blocked" | "ready" | "attention" | "complete";
+type WorkModeId = "command" | "create" | "runs" | "review" | "calendar" | "library" | "insights" | "settings" | "help";
 
 interface WorkflowStageSummary {
   id: WorkflowStageId;
@@ -414,29 +415,37 @@ export const workflowStageModel: Array<{
   path: string;
   icon: PhosphorIconComponent;
 }> = [
-  { id: "heartbeat", label: "Heartbeat", detail: "Next action", path: "/", icon: Pulse },
-  { id: "birth", label: "Birth", detail: "Characters", path: "/characters", icon: User },
-  { id: "production", label: "Production", detail: "Assets", path: "/assets", icon: Image },
-  { id: "review", label: "Review", detail: "Approvals", path: "/drafts", icon: CheckSquare },
-  { id: "publishing", label: "Publishing", detail: "Ledger", path: "/calendar", icon: CalendarBlank },
-  { id: "feedback", label: "Feedback", detail: "Response", path: "/feedback", icon: BookOpen }
+  { id: "heartbeat", label: "Command", detail: "Attention", path: "/", icon: Pulse },
+  { id: "birth", label: "Create", detail: "Start work", path: "/create", icon: User },
+  { id: "production", label: "Library", detail: "Source material", path: "/library", icon: Package },
+  { id: "review", label: "Review", detail: "Human judgment", path: "/review", icon: CheckSquare },
+  { id: "publishing", label: "Calendar / Queue", detail: "Publishing cadence", path: "/calendar", icon: CalendarBlank },
+  { id: "feedback", label: "Insights", detail: "Learning loop", path: "/insights", icon: BookOpen }
 ];
 
-const supportNavItems = [
-  { id: "timeline", label: "Timeline", path: "/runs", detail: "Run trace", icon: ClockCounterClockwise },
-  { id: "prompt-studio", label: "Prompt Studio", path: "/prompt-studio", detail: "Briefs", icon: MagicWand },
-  { id: "operations", label: "Operations", path: "/settings", detail: "Routing", icon: Gear },
+export const workModeModel: Array<{
+  id: WorkModeId;
+  label: string;
+  detail: string;
+  path: string;
+  icon: PhosphorIconComponent;
+}> = [
+  { id: "command", label: "Command", path: "/", detail: "Attention", icon: Pulse },
+  { id: "create", label: "Create", path: "/create", detail: "Start work", icon: MagicWand },
+  { id: "runs", label: "Runs", path: "/runs", detail: "Machine activity", icon: ClockCounterClockwise },
+  { id: "review", label: "Review", path: "/review", detail: "Human judgment", icon: CheckSquare },
+  { id: "calendar", label: "Calendar / Queue", path: "/calendar", detail: "Cadence", icon: CalendarBlank },
+  { id: "library", label: "Library", path: "/library", detail: "Source material", icon: Package },
+  { id: "insights", label: "Insights", path: "/insights", detail: "Learning loop", icon: BookOpen },
+  { id: "settings", label: "Settings / System", path: "/settings", detail: "Tune machine", icon: Gear },
   { id: "help", label: "Help", path: "/help", detail: "How VAS works", icon: Article }
 ];
 
-export const supportNavPaths = supportNavItems.map((item) => item.path);
+export const supportNavPaths = workModeModel.filter((item) => item.id === "help").map((item) => item.path);
 
-const navItems = [
-  ...workflowStageModel,
-  ...supportNavItems
-];
+const navItems = workModeModel;
 
-const workflowSteps = workflowStageModel.filter((stage) => stage.id !== "heartbeat");
+const workModeSteps = workModeModel.filter((mode) => !["command", "settings", "help"].includes(mode.id));
 
 const runTypeLabels: Record<string, string> = {
   character_birth: "Character Birth",
@@ -773,30 +782,58 @@ function assetStatusLabel(status: string) {
   return statusLabel(status);
 }
 
-function workflowStepActive(path: string, stepPath: string) {
-  if (stepPath === "/characters") {
-    return path.startsWith("/characters");
-  }
-  if (stepPath === "/assets") {
-    return path === "/assets";
-  }
-  if (stepPath === "/drafts") {
-    return path === "/drafts";
-  }
-  if (stepPath === "/calendar") {
-    return path === "/calendar";
-  }
-  if (stepPath === "/feedback") {
-    return path === "/feedback";
-  }
+function remapLegacyModePath(path: string) {
+  if (path === "/characters" || path.startsWith("/characters?")) return path.replace(/^\/characters/, "/create");
+  if (path === "/prompt-studio" || path.startsWith("/prompt-studio?")) return path.replace(/^\/prompt-studio/, "/create");
+  if (path === "/assets" || path.startsWith("/assets?")) return path.replace(/^\/assets/, "/library");
+  if (path === "/drafts" || path.startsWith("/drafts?")) return path.replace(/^\/drafts/, "/review");
+  if (path === "/feedback" || path.startsWith("/feedback?")) return path.replace(/^\/feedback/, "/insights");
+  return path;
+}
+
+function workModeActive(path: string, modeId: WorkModeId) {
+  if (modeId === "command") return path === "/";
+  if (modeId === "create") return path === "/create" || path.startsWith("/characters") || path === "/prompt-studio";
+  if (modeId === "runs") return path === "/runs" || path.startsWith("/runs/");
+  if (modeId === "review") return path === "/review" || path === "/drafts";
+  if (modeId === "calendar") return path === "/calendar";
+  if (modeId === "library") return path === "/library" || path === "/assets";
+  if (modeId === "insights") return path === "/insights" || path === "/feedback";
+  if (modeId === "settings") return path === "/settings";
+  if (modeId === "help") return path === "/help";
   return false;
 }
 
+function stageSummaryForMode(data: AppData, modeId: WorkModeId) {
+  const stageIdByMode: Partial<Record<WorkModeId, WorkflowStageId>> = {
+    command: "heartbeat",
+    create: "birth",
+    review: "review",
+    calendar: "publishing",
+    library: "production",
+    insights: "feedback"
+  };
+  if (modeId === "runs") {
+    const activeRuns = data.runs.filter((run) => ["queued", "running", "waiting_for_provider"].includes(run.status)).length;
+    const reviewRuns = data.runs.filter((run) => run.status === "needs_review").length;
+    return { count: activeRuns + reviewRuns, status: activeRuns ? "active" : reviewRuns ? "review" : "history" };
+  }
+  const stageId = stageIdByMode[modeId];
+  return stageId ? data.workflowSummary.find((stage) => stage.id === stageId) : null;
+}
+
 function getWorkflowStage(data: AppData, stageId: WorkflowStageId) {
-  return (
-    data.workflowSummary.find((stage) => stage.id === stageId) ??
-    workflowStageModel.find((stage) => stage.id === stageId)
-  );
+  const model = workflowStageModel.find((stage) => stage.id === stageId);
+  const summary = data.workflowSummary.find((stage) => stage.id === stageId);
+  if (summary && model) {
+    return {
+      ...summary,
+      label: model.label,
+      path: model.path,
+      primaryActionPath: remapLegacyModePath(summary.primaryActionPath)
+    };
+  }
+  return model;
 }
 
 function nextWorkflowStage(stageId: WorkflowStageId) {
@@ -1015,7 +1052,7 @@ function AppShell({
         <div className="rail-section-label">Operations</div>
         <nav className="nav-list">
           {navItems.map((item) => {
-            const active = path === item.path || (item.path !== "/" && path.startsWith(`${item.path}/`));
+            const active = workModeActive(path, item.id);
             const badge =
               item.id === "review" && data.automationStatus?.runsNeedingReview.length
                 ? data.automationStatus.runsNeedingReview.length
@@ -1065,10 +1102,10 @@ function AppShell({
             <span aria-hidden="true" />
           </div>
         </div>
-        <nav className="studio-flow" aria-label="Studio production flow">
-          {workflowSteps.map((step, index) => {
-            const active = workflowStepActive(path, step.path);
-            const summary = data.workflowSummary.find((stage) => stage.id === step.id);
+        <nav className="studio-flow" aria-label="Operator work modes">
+          {workModeSteps.map((step, index) => {
+            const active = workModeActive(path, step.id);
+            const summary = stageSummaryForMode(data, step.id);
             const StepIcon = step.icon;
             return (
               <a
@@ -1119,6 +1156,7 @@ function HeartbeatDashboard({
     data.workflowSummary.find((stage) => stage.status === "ready") ??
     data.workflowSummary[0] ??
     null;
+  const operatorMode = operatorStage ? getWorkflowStage(data, operatorStage.id) : null;
 
   const cards = [
     { label: "Operations", value: automationStatus?.schedulerEnabled ? "On" : "Off", detail: automationStatus?.schedulerEnabled ? "Armed" : "Dispatch", path: "/settings" },
@@ -1140,7 +1178,8 @@ function HeartbeatDashboard({
     <>
       <header className="topbar page-heading">
         <div>
-          <h1>Agency Heartbeat</h1>
+          <h1>Command</h1>
+          <p>What needs attention, what is running, what is ready for review, and what is blocked.</p>
         </div>
       </header>
 
@@ -1150,13 +1189,13 @@ function HeartbeatDashboard({
       <section className="priority-board" aria-label="Priority review queue">
         <article className="review-command">
           <span>Next operator action</span>
-          <strong>{operatorStage ? operatorStage.label : "Ready"}</strong>
-          <p>{operatorStage ? operatorStage.detail : primaryReview ? primaryReview.title : "Studio ready."}</p>
+          <strong>{operatorMode ? operatorMode.label : "Ready"}</strong>
+          <p>{operatorMode ? operatorMode.detail : primaryReview ? primaryReview.title : "Studio ready."}</p>
           <div className="review-command-actions">
-            <button className="primary-action" type="button" onClick={() => navigate(operatorStage?.primaryActionPath ?? (primaryReview ? `/runs/${primaryReview.id}` : "/runs"))}>
-              {operatorStage?.primaryActionLabel ?? (primaryReview ? "Open review gate" : "Open timeline")}
+            <button className="primary-action" type="button" onClick={() => navigate(operatorMode && "primaryActionPath" in operatorMode ? operatorMode.primaryActionPath : primaryReview ? `/runs/${primaryReview.id}` : "/runs")}>
+              {operatorMode && "primaryActionLabel" in operatorMode ? operatorMode.primaryActionLabel : primaryReview ? "Open review gate" : "Open runs"}
             </button>
-            <button type="button" onClick={() => navigate("/runs")}>Open timeline</button>
+            <button type="button" onClick={() => navigate("/runs")}>Open runs</button>
           </div>
         </article>
 
@@ -1164,9 +1203,9 @@ function HeartbeatDashboard({
           <span>Operator cycle</span>
           <div className="dispatch-actions">
             {dispatchActions.map((action) => (
-              <button key={action.id} type="button" onClick={() => navigate(action.primaryActionPath)}>
+              <button key={action.id} type="button" onClick={() => navigate(remapLegacyModePath(action.primaryActionPath))}>
                 <strong>{action.count}</strong>
-                <span>{action.label}</span>
+                <span>{workflowStageModel.find((stage) => stage.id === action.id)?.label ?? action.label}</span>
                 <small>{action.status}</small>
               </button>
             ))}
@@ -1226,6 +1265,112 @@ function HeartbeatDashboard({
               <dt>Providers</dt>
               <dd>Mock-safe by default</dd>
             </div>
+          </dl>
+        </article>
+      </section>
+    </>
+  );
+}
+
+function CreateModePage({
+  data,
+  loading,
+  error,
+  navigate
+}: {
+  data: AppData;
+  loading: boolean;
+  error: string | null;
+  navigate: (path: string) => void;
+}) {
+  const latestCharacter = data.characters[0] ?? null;
+  const readyRecipes = data.runs.filter((run) => run.type === "prompt_generation" && run.status === "completed").length;
+  const creativeRuns = data.runs.filter((run) => ["daily_activity", "prompt_generation", "image_generation", "draft_packaging"].includes(run.type));
+  const createActions = [
+    {
+      label: "Character",
+      value: data.characters.length,
+      detail: latestCharacter ? `Continue ${displayModelName(latestCharacter.name)}` : "Create the first profile",
+      action: "Open character setup",
+      path: latestCharacter ? `/characters/${latestCharacter.id}` : "/characters"
+    },
+    {
+      label: "Content run",
+      value: creativeRuns.length,
+      detail: "Start from an activity, brief, or prompt recipe",
+      action: "Open Prompt Studio",
+      path: "/prompt-studio"
+    },
+    {
+      label: "Asset",
+      value: readyRecipes,
+      detail: "Generate from a saved recipe",
+      action: "Open generation",
+      path: "/library"
+    },
+    {
+      label: "Manual run",
+      value: data.automationStatus?.schedulerEnabled ? "On" : "Off",
+      detail: "Use supervised local automation",
+      action: "Open system controls",
+      path: "/settings"
+    }
+  ];
+
+  return (
+    <>
+      <header className="topbar page-heading">
+        <div>
+          <span className="eyebrow">Create mode</span>
+          <h1>Create</h1>
+          <p>Start a character, campaign idea, asset, post package, or supervised machine run.</p>
+        </div>
+      </header>
+
+      {loading && <div className="notice">Loading creation context.</div>}
+      {error && <div className="notice error">{error}</div>}
+      <StageHandoff data={data} stageId="birth" navigate={navigate} />
+
+      <section className="panel-grid heartbeat-grid" aria-label="Create work starters">
+        {createActions.map((action) => (
+          <button className="status-panel" key={action.label} type="button" onClick={() => navigate(action.path)}>
+            <span>{action.label}</span>
+            <strong>{action.value}</strong>
+            <p>{action.detail}</p>
+            <small>{action.action}</small>
+          </button>
+        ))}
+      </section>
+
+      <section className="content-grid">
+        <article className="machine-room">
+          <div className="section-heading">
+            <h2>Recent creation work</h2>
+            <button type="button" onClick={() => navigate("/runs")}>View runs</button>
+          </div>
+          {creativeRuns.length === 0 ? (
+            <EmptyState title="No creative runs yet" body="Create a character, then start a content run from Prompt Studio." />
+          ) : (
+            <div className="run-stack">
+              {creativeRuns.slice(0, 6).map((run) => (
+                <button className="run-row" key={run.id} onClick={() => navigate(`/runs/${run.id}`)} type="button">
+                  <span>
+                    <strong>{run.title}</strong>
+                    <small>{runTypeLabel(run.type)} · {formatDate(run.updated_at)}</small>
+                  </span>
+                  <em className={statusClass(run.status)}>{statusLabel(run.status)}</em>
+                </button>
+              ))}
+            </div>
+          )}
+        </article>
+
+        <article className="settings-preview">
+          <div className="section-heading"><h2>Create from</h2></div>
+          <dl>
+            <div><dt>Identity</dt><dd>Characters, references, voice, canon</dd></div>
+            <div><dt>Intent</dt><dd>Activities, briefs, prompt recipes</dd></div>
+            <div><dt>Machine</dt><dd>Generation, analysis, packaging runs</dd></div>
           </dl>
         </article>
       </section>
@@ -1301,8 +1446,8 @@ function RunsPage({
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Agent timeline</span>
-          <h1>Timeline</h1>
+          <span className="eyebrow">Machine activity</span>
+          <h1>Runs</h1>
         </div>
       </header>
 
@@ -3452,7 +3597,7 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
 
   return (
     <>
-      <header className="topbar page-heading"><div><h1>Review Desk</h1></div></header>
+      <header className="topbar page-heading"><div><h1>Review</h1></div></header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
       <StageHandoff data={data} stageId="review" navigate={navigate} />
@@ -3726,7 +3871,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
     <>
       <header className="topbar page-heading calendar-topbar">
         <div>
-          <h1>Publishing Desk</h1>
+          <h1>Calendar / Queue</h1>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -3921,7 +4066,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
   );
 }
 
-function FeedbackPage({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
+function FeedbackPage({ data, navigate, title = "Insights" }: { data: AppData; navigate: (path: string) => void; title?: string }) {
   const [events, setEvents] = useState<PublishingEvent[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
   const [selectedEventId, setSelectedEventId] = useState(() => readFeedbackRouteState().eventId);
@@ -4020,7 +4165,7 @@ function FeedbackPage({ data, navigate }: { data: AppData; navigate: (path: stri
     <>
       <header className="topbar page-heading">
         <div>
-          <h1>Feedback</h1>
+          <h1>{title}</h1>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -4117,47 +4262,53 @@ function PlaceholderPage({ title }: { title: string }) {
 
 const helpWorkflow = [
   {
-    label: "Heartbeat",
+    label: "Command",
     path: "/",
     intent: "Start here when you are unsure what needs attention.",
-    operatorAction: "Use the dispatch cards to jump to the oldest blocked or ready stage."
+    operatorAction: "Check attention, running work, review-ready output, and blocked work."
   },
   {
-    label: "Birth",
-    path: "/characters",
-    intent: "Create the character and keep the identity readable.",
-    operatorAction: "Create or select a character, run Birth, then review proposed identity changes before continuing."
+    label: "Create",
+    path: "/create",
+    intent: "Start a character, campaign idea, asset, post package, or creative run.",
+    operatorAction: "Choose the kind of work to start before dropping into a detailed tool."
   },
   {
-    label: "Production",
-    path: "/assets",
-    intent: "Build the character archive.",
-    operatorAction: "Generate, import, analyze, approve, reject, or convert assets into drafts."
+    label: "Runs",
+    path: "/runs",
+    intent: "Watch current and past machine activity.",
+    operatorAction: "Inspect status, progress, checkpoints, outcomes, and failed or waiting work."
   },
   {
     label: "Review",
-    path: "/drafts",
-    intent: "Keep human approval between automation and publication.",
-    operatorAction: "Review drafts first, then handle run gates, asset gates, and identity proposals."
+    path: "/review",
+    intent: "Judge generated output before it moves forward.",
+    operatorAction: "Approve, revise, or reject output that is waiting on a human."
   },
   {
-    label: "Publishing",
+    label: "Calendar / Queue",
     path: "/calendar",
-    intent: "Package approved work for manual posting.",
-    operatorAction: "Inspect the publishing ledger, export packages, and record manual publish events."
+    intent: "Plan publishing cadence and see queued content.",
+    operatorAction: "Inspect scheduled content, planned activity, and manual publishing state."
   },
   {
-    label: "Feedback",
-    path: "/feedback",
-    intent: "Turn published response into character learning.",
-    operatorAction: "Log performance and qualitative response, launch reflection, then review identity proposals."
+    label: "Library",
+    path: "/library",
+    intent: "Find reusable source material and approved outputs.",
+    operatorAction: "Browse characters, assets, prompts, references, and production-ready material."
+  },
+  {
+    label: "Insights",
+    path: "/insights",
+    intent: "Understand performance, learnings, feedback, and iteration history.",
+    operatorAction: "Log response, launch reflection, and inspect what the system learned."
   }
 ];
 
 const helpSupport = [
-  ["Prompt Studio", "Compose briefs and image-generation recipes when Production needs more directed assets."],
-  ["Timeline", "Trace RunEvents, provider jobs, artifacts, decisions, and failures without changing publishing state."],
-  ["Operations", "Configure provider routing, Comfy workflows, automation supervision, and manual run tools."]
+  ["Settings / System", "Configure provider routing, Comfy workflows, automation supervision, and manual run tools."],
+  ["Deep character pages", "Edit identity law, references, voice, memory, and proposals after entering Create."],
+  ["Run detail", "Trace RunEvents, provider jobs, artifacts, decisions, and failures without changing publishing state."]
 ];
 
 function HelpPage({ navigate }: { navigate: (path: string) => void }) {
@@ -4184,11 +4335,11 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
           <div className="help-quick-start">
             <span>First session</span>
             <ol>
-              <li>Create or select a character in Birth.</li>
-              <li>Run Birth and review the resulting identity material.</li>
-              <li>Generate assets in Production, then approve only the ones that fit.</li>
-              <li>Create a draft, approve it in Review, and publish manually from Publishing.</li>
-              <li>Log response in Feedback and review any proposed character changes.</li>
+              <li>Start in Create and choose the kind of work to begin.</li>
+              <li>Use Runs to watch the machine produce checkpoints and outcomes.</li>
+              <li>Use Review to approve, revise, or reject generated output.</li>
+              <li>Use Calendar / Queue to plan or record manual publishing.</li>
+              <li>Use Insights to log response and review what the system learned.</li>
             </ol>
           </div>
         </article>
@@ -4751,7 +4902,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       <header className="topbar page-heading">
         <div>
           <span className="eyebrow">Local controls</span>
-          <h1>Operations</h1>
+          <h1>Settings / System</h1>
           <p>Provider routing, automation gates, and manual dispatch.</p>
         </div>
       </header>
@@ -5056,6 +5207,9 @@ export function App() {
     if (path === "/") {
       return <HeartbeatDashboard data={data} loading={loading} error={error} navigate={navigate} />;
     }
+    if (path === "/create") {
+      return <CreateModePage data={data} loading={loading} error={error} navigate={navigate} />;
+    }
     if (path === "/runs") {
       return <RunsPage data={data} loading={loading} error={error} navigate={navigate} />;
     }
@@ -5074,16 +5228,19 @@ export function App() {
     if (path === "/prompt-studio") {
       return <PromptStudioPage data={data} navigate={navigate} />;
     }
-    if (path === "/assets") {
+    if (path === "/assets" || path === "/library") {
       return <AssetLibraryPage data={data} navigate={navigate} />;
     }
-    if (path === "/drafts") {
+    if (path === "/drafts" || path === "/review") {
       return <DraftReviewDesk data={data} navigate={navigate} />;
     }
     if (path === "/calendar") {
       return <CalendarLedgerPage data={data} navigate={navigate} />;
     }
     if (path === "/feedback") {
+      return <FeedbackPage data={data} navigate={navigate} title="Feedback" />;
+    }
+    if (path === "/insights") {
       return <FeedbackPage data={data} navigate={navigate} />;
     }
     if (path === "/help") {

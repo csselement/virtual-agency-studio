@@ -358,7 +358,7 @@ pre {
 
 .studio-flow {
   display: grid;
-  grid-template-columns: repeat(5, minmax(0, 1fr));
+  grid-template-columns: repeat(6, minmax(0, 1fr));
   gap: var(--grid-gap-sm);
   margin-bottom: 24px;
 }
