@@ -474,6 +474,20 @@ function formatDate(value: string | null | undefined) {
   }).format(new Date(value));
 }
 
+function formatTime(value: string | null | undefined) {
+  if (!value) {
+    return "Not scheduled";
+  }
+  return new Intl.DateTimeFormat(undefined, {
+    hour: "numeric",
+    minute: "2-digit"
+  }).format(new Date(value));
+}
+
+function pluralize(count: number, singular: string, plural = `${singular}s`) {
+  return `${count} ${count === 1 ? singular : plural}`;
+}
+
 function formatBytes(value: number | null | undefined) {
   if (!value) {
     return "0 KB";
@@ -836,6 +850,56 @@ function getWorkflowStage(data: AppData, stageId: WorkflowStageId) {
   return model;
 }
 
+function characterNeedsSetup(character: CharacterSummary, characterRunIds: Set<string | null>) {
+  const status = character.status.toLowerCase();
+  return ["idea", "draft", "setup", "needs_setup", "incomplete"].some((value) => status.includes(value)) || !characterRunIds.has(character.id);
+}
+
+function activeRunProgress(run: RunSummary) {
+  const total = 5;
+  const currentByStatus: Record<RunStatus, number> = {
+    queued: 1,
+    running: 2,
+    waiting_for_provider: 3,
+    needs_review: 4,
+    completed: 5,
+    failed: 2,
+    cancelled: 1
+  };
+  const current = currentByStatus[run.status] ?? 1;
+  return `${current} of ${total} steps ${run.status === "queued" ? "queued" : run.status === "failed" || run.status === "cancelled" ? "reached" : "complete"}`;
+}
+
+function activeRunStatusText(run: RunSummary) {
+  if (run.status === "waiting_for_provider") {
+    if (run.type === "image_generation" || run.type === "daily_activity") return "Waiting for image results";
+    return "Waiting for provider results";
+  }
+  if (run.status === "running") return "Running";
+  if (run.status === "queued") return "Queued";
+  return statusLabel(run.status);
+}
+
+function humanRunTitle(run: RunSummary) {
+  const cleaned = run.title
+    .replace(/\b\d{4}-\d{2}-\d{2}T[\d-]+Z\b/g, "")
+    .replace(/^Phase\s+\d+\s+Smoke\s+/i, "")
+    .replace(/\s{2,}/g, " ")
+    .trim();
+  if (!cleaned || cleaned.toLowerCase() === run.type.replaceAll("_", " ")) return runTypeLabel(run.type);
+  return cleaned;
+}
+
+function reviewItemLabel(run: RunSummary) {
+  const title = humanRunTitle(run);
+  if (run.type === "image_generation" || run.type === "image_analysis") return `Image set: ${title}`;
+  if (run.type === "draft_packaging") return `Caption draft: ${title}`;
+  if (run.type === "prompt_generation") return `Prompt set: ${title}`;
+  if (run.type === "feedback_reflection" || run.type === "canon_evolution" || run.type === "character_birth") return `Character update: ${title}`;
+  if (run.type === "daily_activity") return `Creative run: ${title}`;
+  return title;
+}
+
 function nextWorkflowStage(stageId: WorkflowStageId) {
   const index = workflowStageModel.findIndex((stage) => stage.id === stageId);
   return workflowStageModel[index + 1] ?? workflowStageModel[0];
@@ -1143,130 +1207,124 @@ function HeartbeatDashboard({
   navigate: (path: string) => void;
 }) {
   const runs = data.runs;
-  const runningRuns = runs.filter((run) => run.status === "running" || run.status === "waiting_for_provider");
-  const failedRuns = runs.filter((run) => run.status === "failed");
+  const activeRuns = runs.filter((run) => ["queued", "running", "waiting_for_provider"].includes(run.status));
   const reviewRuns = runs.filter((run) => run.status === "needs_review");
-  const completedRuns = runs.filter((run) => run.status === "completed");
-  const activeCharacterIds = new Set(runs.filter((run) => run.character_id).map((run) => run.character_id));
-  const activeCharacters = data.characters.filter((character) => activeCharacterIds.has(character.id));
+  const characterRunIds = new Set(runs.filter((run) => run.character_id).map((run) => run.character_id));
+  const setupCharacters = data.characters.filter((character) => characterNeedsSetup(character, characterRunIds));
   const automationStatus = data.automationStatus;
-  const primaryReview = automationStatus?.runsNeedingReview[0] ?? reviewRuns[0] ?? null;
-  const operatorStage =
-    data.workflowSummary.find((stage) => stage.status === "attention") ??
-    data.workflowSummary.find((stage) => stage.status === "ready") ??
-    data.workflowSummary[0] ??
-    null;
-  const operatorMode = operatorStage ? getWorkflowStage(data, operatorStage.id) : null;
-
-  const cards = [
-    { label: "Operations", value: automationStatus?.schedulerEnabled ? "On" : "Off", detail: automationStatus?.schedulerEnabled ? "Armed" : "Dispatch", path: "/settings" },
-    { label: "Next Run", value: automationStatus?.nextRunAt ? formatDate(automationStatus.nextRunAt) : "None", detail: automationStatus?.lastTriggeredAt ? `Last ${formatDate(automationStatus.lastTriggeredAt)}` : "Quiet", path: "/settings" },
-    { label: "Review Gates", value: reviewRuns.length, detail: primaryReview ? "Decision" : "Clear", path: runQuery("needs_review") },
-    { label: "Running", value: runningRuns.length, detail: automationStatus?.currentlyRunning?.title ?? "No active automation", path: runQuery("active") },
-    { label: "Failed", value: failedRuns.length, detail: failedRuns[0]?.error ?? "Clear", path: runQuery("failed") },
-    { label: "Completed", value: completedRuns.length, detail: completedRuns[0] ? runTypeLabel(completedRuns[0].type) : "None", path: runQuery("completed") },
-    {
-      label: "Active Cast",
-      value: activeCharacters.length,
-      detail: "In motion",
-      path: "/characters"
-    }
-  ];
-  const dispatchActions = data.workflowSummary.filter((stage) => stage.id !== "heartbeat");
+  const reviewStage = data.workflowSummary.find((stage) => stage.id === "review");
+  const publishingStage = data.workflowSummary.find((stage) => stage.id === "publishing");
+  const blockedAutomations = data.workflowSummary.filter((stage) => stage.status === "blocked").reduce((total, stage) => total + Math.max(stage.count, 1), 0);
+  const reviewCount = reviewStage?.count ?? reviewRuns.length;
+  const activeRun = automationStatus?.currentlyRunning ?? activeRuns[0] ?? null;
+  const readyReviewItems = [
+    ...(automationStatus?.runsNeedingReview ?? []),
+    ...reviewRuns.filter((run) => !(automationStatus?.runsNeedingReview ?? []).some((item) => item.id === run.id))
+  ].slice(0, 3);
+  const scheduledToday = publishingStage?.count ?? 0;
+  const nextWindow = formatTime(automationStatus?.nextRunAt);
+  const systemHealthy = Boolean(data.health?.ok) && !error;
+  const primaryAction = reviewCount
+    ? { label: "Review outputs", path: "/review" }
+    : activeRun
+      ? { label: "View run", path: `/runs/${activeRun.id}` }
+      : setupCharacters[0]
+        ? { label: "Continue setup", path: `/characters/${setupCharacters[0].id}` }
+        : scheduledToday
+          ? { label: "Open queue", path: "/calendar" }
+          : { label: "Start creating", path: "/create" };
 
   return (
     <>
       <header className="topbar page-heading">
         <div>
-          <h1>Command</h1>
-          <p>What needs attention, what is running, what is ready for review, and what is blocked.</p>
+          <span className="eyebrow">Command</span>
+          <h1>Virtual Agency Studio</h1>
         </div>
       </header>
 
       {loading && <div className="notice">Loading local machine state.</div>}
       {error && <div className="notice error">{error}</div>}
 
-      <section className="priority-board" aria-label="Priority review queue">
-        <article className="review-command">
-          <span>Next operator action</span>
-          <strong>{operatorMode ? operatorMode.label : "Ready"}</strong>
-          <p>{operatorMode ? operatorMode.detail : primaryReview ? primaryReview.title : "Studio ready."}</p>
+      <section className="priority-board command-router" aria-label="Today in Virtual Agency Studio">
+        <article className="review-command today-router">
+          <span>Today</span>
+          <ul className="attention-list">
+            <li><strong>{reviewCount}</strong><span>{reviewCount === 1 ? "output needs review" : "outputs need review"}</span></li>
+            <li><strong>{activeRuns.length}</strong><span>{activeRuns.length === 1 ? "run is in progress" : "runs are in progress"}</span></li>
+            <li><strong>{setupCharacters.length}</strong><span>{setupCharacters.length === 1 ? "character needs setup" : "characters need setup"}</span></li>
+            <li><strong>{blockedAutomations}</strong><span>{blockedAutomations === 1 ? "blocked automation" : "blocked automations"}</span></li>
+          </ul>
           <div className="review-command-actions">
-            <button className="primary-action" type="button" onClick={() => navigate(operatorMode && "primaryActionPath" in operatorMode ? operatorMode.primaryActionPath : primaryReview ? `/runs/${primaryReview.id}` : "/runs")}>
-              {operatorMode && "primaryActionLabel" in operatorMode ? operatorMode.primaryActionLabel : primaryReview ? "Open review gate" : "Open runs"}
+            <button className="primary-action" type="button" onClick={() => navigate(primaryAction.path)}>
+              {primaryAction.label}
             </button>
-            <button type="button" onClick={() => navigate("/runs")}>Open runs</button>
           </div>
         </article>
 
-        <article className="dispatch-board">
-          <span>Operator cycle</span>
-          <div className="dispatch-actions">
-            {dispatchActions.map((action) => (
-              <button key={action.id} type="button" onClick={() => navigate(remapLegacyModePath(action.primaryActionPath))}>
-                <strong>{action.count}</strong>
-                <span>{workflowStageModel.find((stage) => stage.id === action.id)?.label ?? action.label}</span>
-                <small>{action.status}</small>
-              </button>
-            ))}
+        <article className="settings-preview command-health">
+          <div className="section-heading">
+            <h2>System Health</h2>
+            <button type="button" onClick={() => navigate("/settings")}>View details</button>
           </div>
+          <strong>{systemHealthy ? "All providers connected" : "System needs attention"}</strong>
+          <p>{systemHealthy ? "Local API is online and the studio can use configured provider routing." : "Open system details to inspect provider routing and local API state."}</p>
         </article>
       </section>
 
-      <section className="panel-grid heartbeat-grid" aria-label="Agency status">
-        {cards.map((card) => (
-          <button className="status-panel" key={card.label} type="button" onClick={() => navigate(card.path)}>
-            <span>{card.label}</span>
-            <strong>{card.value}</strong>
-            <p>{card.detail}</p>
-          </button>
-        ))}
-      </section>
-
-      <section className="content-grid">
+      <section className="command-detail-grid">
         <article className="machine-room">
           <div className="section-heading">
-            <h2>Recent Timeline</h2>
-            <button type="button" onClick={() => navigate("/runs")}>
-              View all
-            </button>
+            <h2>Active Run</h2>
+            {activeRun && <button type="button" onClick={() => navigate(`/runs/${activeRun.id}`)}>View run</button>}
           </div>
-          {runs.length === 0 ? (
-            <EmptyState title="No runs yet" body="Seed data or create a run to see the machine timeline." />
+          {!activeRun ? (
+            <EmptyState title="No active run" body="Start a creative run when you are ready to put the machine to work." />
           ) : (
-            <div className="run-stack">
-              {runs.slice(0, 6).map((run) => (
-                <button className="run-row" key={run.id} onClick={() => navigate(`/runs/${run.id}`)} type="button">
-                  <span>
-                    <strong>{run.title}</strong>
-                    <small>{runTypeLabel(run.type)} · updated {formatDate(run.updated_at)}</small>
-                  </span>
-                  <em className={statusClass(run.status)}>{statusLabel(run.status)}</em>
-                </button>
-              ))}
+            <div className="active-run-card">
+              <strong>{humanRunTitle(activeRun)}</strong>
+              <dl>
+                <div><dt>Status</dt><dd>{activeRunStatusText(activeRun)}</dd></div>
+                <div><dt>Progress</dt><dd>{activeRunProgress(activeRun)}</dd></div>
+              </dl>
             </div>
           )}
         </article>
 
-        <article className="settings-preview">
-          <div className="section-heading">
-            <h2>Local Guardrails</h2>
-          </div>
-          <dl>
-            <div>
-              <dt>API</dt>
-              <dd>{data.health ? `${data.health.service} ${data.health.version}` : "Checking"}</dd>
-            </div>
-            <div>
-              <dt>Storage</dt>
-              <dd>Local workspace</dd>
-            </div>
-            <div>
-              <dt>Providers</dt>
-              <dd>Mock-safe by default</dd>
-            </div>
-          </dl>
-        </article>
+        <div className="command-side-stack">
+          <article className="settings-preview">
+            <div className="section-heading"><h2>Ready for Review</h2></div>
+            {readyReviewItems.length === 0 ? (
+              <EmptyState title="Nothing waiting" body="Approved and blocked work will stay out of the way until action is needed." />
+            ) : (
+              <div className="run-stack compact-review-list">
+                {readyReviewItems.map((run) => (
+                  <button className="run-row" key={run.id} onClick={() => navigate(`/runs/${run.id}`)} type="button">
+                    <span>
+                      <strong>{reviewItemLabel(run)}</strong>
+                      <small>{runTypeLabel(run.type)}</small>
+                    </span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article className="settings-preview command-upcoming">
+            <div className="section-heading"><h2>Upcoming</h2></div>
+            <dl>
+              <div>
+                <dt>Scheduled activities today</dt>
+                <dd>{pluralize(scheduledToday, "scheduled activity", "scheduled activities")}</dd>
+              </div>
+              <div>
+                <dt>Next publishing window</dt>
+                <dd>{nextWindow}</dd>
+              </div>
+            </dl>
+            <button type="button" onClick={() => navigate("/calendar")}>Open queue</button>
+          </article>
+        </div>
       </section>
     </>
   );
