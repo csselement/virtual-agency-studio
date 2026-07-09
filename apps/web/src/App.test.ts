@@ -19,6 +19,7 @@ import {
   readFeedbackRouteState,
   readReviewRouteState,
   safeAssetAltText,
+  profileReferenceImage,
   supportNavPaths,
   workModeModel,
   workflowStageModel
@@ -84,6 +85,15 @@ describe("web app config", () => {
       primaryActionLabel: "Log Audience Response",
       primaryActionPath: "/insights?eventId=event_1"
     });
+  });
+
+  it("uses an approved character reference as the roster profile image", () => {
+    const pending = { id: "ref_pending", file_path: "assets/pending.png", original_name: "pending.png", mime_type: "image/png", size_bytes: 100, status: "pending" };
+    const approved = { id: "ref_approved", file_path: "assets/approved.png", original_name: "approved.png", mime_type: "image/png", size_bytes: 100, status: "approved" };
+
+    expect(profileReferenceImage([pending, approved])).toEqual(approved);
+    expect(profileReferenceImage([pending])).toEqual(pending);
+    expect(profileReferenceImage([])).toBeNull();
   });
 
   it("translates home data into a director-facing desk model", () => {

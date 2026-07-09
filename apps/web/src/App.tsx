@@ -848,6 +848,10 @@ export function safeAssetAltText(altText: string | null | undefined, fallback: s
   return stripped;
 }
 
+export function profileReferenceImage(referenceImages: ReferenceImage[]) {
+  return referenceImages.find((image) => image.status === "approved") ?? referenceImages[0] ?? null;
+}
+
 export function agencyFacingPackageTitle(title: string | null | undefined, talentName?: string | null) {
   const source = title?.trim();
   if (!source || generatedPackageTitlePattern.test(source)) {
@@ -4089,6 +4093,7 @@ function CharactersPage({
   const [query, setQuery] = useState("");
   const [laneFilter, setLaneFilter] = useState<"all" | TalentStageId>("all");
   const [selectedCharacterId, setSelectedCharacterId] = useState(() => readCharacterRouteState().selected);
+  const [rosterProfiles, setRosterProfiles] = useState<Map<string, CharacterDetail>>(() => new Map());
   const [formError, setFormError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
@@ -4118,6 +4123,9 @@ function CharactersPage({
     data.characters[0] ??
     null;
   const selectedCareer = selectedCharacter ? careerSummaries.get(selectedCharacter.id) ?? buildTalentCareerSummary(selectedCharacter, data.runs) : null;
+  const selectedProfileReference = selectedCharacter
+    ? profileReferenceImage(rosterProfiles.get(selectedCharacter.id)?.referenceImages ?? [])
+    : null;
   const selectedRun = selectedCharacter ? data.runs.find((run) => run.character_id === selectedCharacter.id) ?? null : null;
   const activeRunCount = data.runs.filter(
     (run) => run.character_id && !["completed", "failed", "cancelled"].includes(run.status)
@@ -4126,6 +4134,29 @@ function CharactersPage({
   const pushTalentCount = rosterLanes
     .filter((lane) => ["star_talent", "core_talent", "rising_talent"].includes(lane.id))
     .reduce((total, lane) => total + lane.talent.length, 0);
+  const characterIdsKey = data.characters.map((character) => character.id).join("|");
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      data.characters.map(async (character) => {
+        try {
+          const response = await fetch(`${apiBaseUrl()}/api/characters/${character.id}`);
+          if (!response.ok) return null;
+          const payload = (await response.json()) as { character: CharacterDetail };
+          return payload.character;
+        } catch {
+          return null;
+        }
+      })
+    ).then((profiles) => {
+      if (cancelled) return;
+      setRosterProfiles(new Map(profiles.filter((profile): profile is CharacterDetail => Boolean(profile)).map((profile) => [profile.id, profile])));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [characterIdsKey]);
 
   useEffect(() => {
     if (selectedCharacterId && data.characters.some((character) => character.id === selectedCharacterId)) {
@@ -4226,6 +4257,7 @@ function CharactersPage({
               {filteredCharacters.map((character) => {
                 const selected = selectedCharacter?.id === character.id;
                 const career = careerSummaries.get(character.id) ?? buildTalentCareerSummary(character, data.runs);
+                const profileReference = profileReferenceImage(rosterProfiles.get(character.id)?.referenceImages ?? []);
                 return (
                   <button
                     aria-pressed={selected}
@@ -4237,7 +4269,14 @@ function CharactersPage({
                       replaceRouteQuery("/talent", { selected: character.id });
                     }}
                   >
-                    <div className="thumb">{modelInitials(character.name)}</div>
+                    <div className="thumb">
+                      {profileReference ? (
+                        <img
+                          src={`${apiBaseUrl()}/api/characters/${character.id}/reference-images/${profileReference.id}/file`}
+                          alt={`${career.displayName} profile reference`}
+                        />
+                      ) : modelInitials(character.name)}
+                    </div>
                     <div>
                       <strong>{career.displayName}</strong>
                       <em className="talent-stage-pill">{talentStageLabel(career.stage)}</em>
@@ -4259,7 +4298,14 @@ function CharactersPage({
           {selectedCharacter && selectedCareer ? (
             <div className="casting-selected">
               <div className="casting-mark">
-                <span>{modelInitials(selectedCharacter.name)}</span>
+                {selectedProfileReference ? (
+                  <img
+                    src={`${apiBaseUrl()}/api/characters/${selectedCharacter.id}/reference-images/${selectedProfileReference.id}/file`}
+                    alt={`${selectedCareer.displayName} profile reference`}
+                  />
+                ) : (
+                  <span>{modelInitials(selectedCharacter.name)}</span>
+                )}
               </div>
               <div>
                 <span className="eyebrow">Talent file</span>
