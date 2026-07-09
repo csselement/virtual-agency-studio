@@ -3169,6 +3169,7 @@ function CreateModePage({
 }) {
   const [selectedCharacterId, setSelectedCharacterId] = useState("");
   const [localCharacter, setLocalCharacter] = useState<CharacterDetail | null>(null);
+  const [scoutingProfiles, setScoutingProfiles] = useState<Map<string, CharacterDetail>>(() => new Map());
   const [localBirthRun, setLocalBirthRun] = useState<RunSummary | null>(null);
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
@@ -3200,11 +3201,13 @@ function CreateModePage({
   const [portfolioTest, setPortfolioTest] = useState("");
   const [driftRisk, setDriftRisk] = useState("");
   const platformOptions = ["Instagram", "TikTok", "Threads", "YouTube", "X", "Blog"];
+  const characterIdsKey = data.characters.map((character) => character.id).join("|");
   const scopedCharacters = useMemo(() => {
-    if (!localCharacter) return data.characters;
-    const withoutLocal = data.characters.filter((character) => character.id !== localCharacter.id);
+    const detailedCharacters = data.characters.map((character) => scoutingProfiles.get(character.id) ?? character);
+    if (!localCharacter) return detailedCharacters;
+    const withoutLocal = detailedCharacters.filter((character) => character.id !== localCharacter.id);
     return [localCharacter, ...withoutLocal];
-  }, [data.characters, localCharacter]);
+  }, [data.characters, localCharacter, scoutingProfiles]);
   const selectedCharacter =
     scopedCharacters.find((character) => character.id === selectedCharacterId) ??
     scopedCharacters[0] ??
@@ -3223,7 +3226,32 @@ function CreateModePage({
   const approvedNewFaces = scopedCharacters.filter((character) => character.status.toLowerCase().includes("approved")).length;
   const intakeReady = Boolean(name.trim() && (marketOpportunity.trim() || initialSummary.trim() || uniquenessHook.trim()));
   const latestBirthRun = dossier?.latestBirthRun ?? null;
+  const dossierProfileReference = selectedCharacter && hasCharacterDetail(selectedCharacter)
+    ? profileReferenceImage(selectedCharacter.referenceImages)
+    : null;
   const intakeStepTitle = newFaceIntakeSteps[intakeStep] ?? newFaceIntakeSteps[0];
+
+  useEffect(() => {
+    let cancelled = false;
+    Promise.all(
+      data.characters.map(async (character) => {
+        try {
+          const response = await fetch(`${apiBaseUrl()}/api/characters/${character.id}`);
+          if (!response.ok) return null;
+          const payload = (await response.json()) as { character: CharacterDetail };
+          return payload.character;
+        } catch {
+          return null;
+        }
+      })
+    ).then((profiles) => {
+      if (cancelled) return;
+      setScoutingProfiles(new Map(profiles.filter((profile): profile is CharacterDetail => Boolean(profile)).map((profile) => [profile.id, profile])));
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [characterIdsKey]);
 
   useEffect(() => {
     if (selectedCharacterId && scopedCharacters.some((character) => character.id === selectedCharacterId)) {
@@ -3525,8 +3553,17 @@ function CreateModePage({
             {dossier ? (
               <>
                 <div className="dossier-hero">
-                  <div className="casting-mark"><span>{modelInitials(dossier.displayName)}</span></div>
-                  <div>
+                  <div className="casting-mark dossier-profile-photo">
+                    {dossierProfileReference && selectedCharacter ? (
+                      <img
+                        src={`${apiBaseUrl()}/api/characters/${selectedCharacter.id}/reference-images/${dossierProfileReference.id}/file`}
+                        alt={`${dossier.displayName} profile reference`}
+                      />
+                    ) : (
+                      <span>{modelInitials(dossier.displayName)}</span>
+                    )}
+                  </div>
+                  <div className="dossier-identity-copy">
                     <span className="eyebrow">Director review</span>
                     <h2>{dossier.displayName}</h2>
                     <p>{dossier.publicPromise}</p>

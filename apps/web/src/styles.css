@@ -1414,10 +1414,30 @@ h1 {
 
 .dossier-hero {
   display: grid;
-  grid-template-columns: auto minmax(0, 1fr);
-  gap: 14px;
-  align-items: center;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
   margin-bottom: 16px;
+}
+
+.dossier-profile-photo {
+  width: 112px;
+  min-height: 136px;
+  aspect-ratio: 4 / 5;
+}
+
+.dossier-profile-photo > img {
+  min-height: 0;
+  max-height: none;
+}
+
+.dossier-profile-photo span {
+  width: 64px;
+}
+
+.dossier-identity-copy {
+  min-width: 0;
+  padding-top: 4px;
 }
 
 .dossier-hero h2 {
@@ -1431,6 +1451,7 @@ h1 {
   color: #52615c;
   font-size: 13px;
   line-height: 1.45;
+  text-wrap: pretty;
 }
 
 .new-face-fields {
@@ -1444,8 +1465,9 @@ h1 {
 
 .new-face-fields > div {
   display: grid;
-  grid-template-columns: minmax(124px, 0.34fr) minmax(0, 0.66fr);
-  gap: 12px;
+  grid-template-columns: 112px minmax(0, 1fr);
+  gap: 16px;
+  align-items: start;
   padding: 11px 12px;
   border-bottom: 1px solid rgba(31, 48, 39, 0.08);
   background: #fcfcf8;
@@ -1467,6 +1489,8 @@ h1 {
   color: #25312e;
   font-size: 13px;
   line-height: 1.4;
+  overflow-wrap: anywhere;
+  text-wrap: pretty;
 }
 
 .director-decision-panel,
@@ -5827,6 +5851,16 @@ h1 {
   .dossier-step-grid,
   .new-face-fields > div {
     grid-template-columns: 1fr;
+  }
+
+  .dossier-hero {
+    grid-template-columns: 88px minmax(0, 1fr);
+    gap: 12px;
+  }
+
+  .dossier-profile-photo {
+    width: 88px;
+    min-height: 108px;
   }
 }
 
