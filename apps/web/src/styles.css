@@ -2011,6 +2011,10 @@ h1 {
   margin-bottom: 0;
 }
 
+.talent-career-snapshot {
+  grid-template-columns: 1fr;
+}
+
 .identity-hero,
 .identity-stat-grid article {
   min-width: 0;
@@ -9884,6 +9888,10 @@ summary {
   grid-template-columns: minmax(0, 1.3fr) minmax(280px, 0.7fr);
   gap: 16px;
   align-items: stretch;
+}
+
+.help-intro-distilled {
+  grid-template-columns: 1fr;
 }
 
 .help-intro > div,

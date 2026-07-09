@@ -2725,6 +2725,7 @@ function StageHandoff({
   const primaryActionPath = "primaryActionPath" in stage ? stage.primaryActionPath : stage.path;
   const primaryActionLabel = "primaryActionLabel" in stage ? stage.primaryActionLabel : `Open ${stage.label}`;
   const presentation = agencyFacingStagePresentation(stageId, currentDetail, primaryActionLabel, primaryActionPath);
+  const primaryActionIsCurrentPage = presentation.primaryActionPath === window.location.pathname;
   return (
     <section className={`stage-handoff stage-handoff-${currentStatus}`} aria-label={`${stage.label} workflow handoff`}>
       <div>
@@ -2739,9 +2740,11 @@ function StageHandoff({
       </div>
       <div className="stage-handoff-actions">
         <em>{currentStatus}</em>
-        <button className="primary-action" type="button" onClick={() => navigate(presentation.primaryActionPath)}>
-          {presentation.primaryActionLabel}
-        </button>
+        {!primaryActionIsCurrentPage && (
+          <button className="primary-action" type="button" onClick={() => navigate(presentation.primaryActionPath)}>
+            {presentation.primaryActionLabel}
+          </button>
+        )}
         {nextStage && nextStage.path !== presentation.primaryActionPath && (
           <button type="button" onClick={() => navigate(nextStage.path)}>
             Continue
@@ -3016,7 +3019,6 @@ function HeartbeatDashboard({
         <div>
           <span className="eyebrow">Studio</span>
           <h1>Director's Desk</h1>
-          <p>Start with approvals, follow-up, and talent signals that need a director decision today.</p>
         </div>
       </header>
 
@@ -3382,7 +3384,6 @@ function CreateModePage({
         <div>
           <span className="eyebrow">New faces</span>
           <h1>Scouting</h1>
-          <p>Evaluate a new identity before adding it to the agency roster.</p>
         </div>
       </header>
 
@@ -3566,7 +3567,6 @@ function CreateModePage({
                   <div className="dossier-identity-copy">
                     <span className="eyebrow">Director review</span>
                     <h2>{dossier.displayName}</h2>
-                    <p>{dossier.publicPromise}</p>
                   </div>
                 </div>
                 <dl className="new-face-fields">
@@ -4331,7 +4331,6 @@ function CharactersPage({
         <aside className="settings-preview casting-panel">
           <div className="section-heading">
             <h2>Selected</h2>
-            {selectedCareer && <span>{talentStageLabel(selectedCareer.stage)}</span>}
           </div>
           {selectedCharacter && selectedCareer ? (
             <div className="casting-selected">
@@ -4348,7 +4347,6 @@ function CharactersPage({
               <div>
                 <span className="eyebrow">Talent file</span>
                 <h2>{selectedCareer.displayName}</h2>
-                <p>{selectedCareer.shortPositioning}</p>
               </div>
               <div className="casting-facts">
                 <div>
@@ -4583,13 +4581,7 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
               <span>{modelInitials(character.name)}</span>
             )}
           </div>
-          <div className="dossier-title-block">
-            <span>Talent Profile</span>
-            <h2>{displayName}</h2>
-            <p>{careerSummary.shortPositioning}</p>
-          </div>
           <div className="button-stack">
-            <button className="primary-action" type="button" onClick={profilePrimaryAction}>{profilePrimaryActionLabel}</button>
             <button type="button" onClick={() => navigate("/insights")}>Open Audience Response</button>
             <button type="button" onClick={() => navigate(latestRun ? `/runs/${latestRun.id}` : "/runs")}>Production Logs</button>
           </div>
@@ -4613,27 +4605,10 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
 
         <section className="dossier-workbench">
           <section className="profile-command talent-profile-command" aria-label="Talent career command">
-            <article className="identity-hero talent-comp-card">
-              <div className="identity-portrait">
-                {profileReference ? (
-                  <img
-                    src={`${apiBaseUrl()}/api/characters/${character.id}/reference-images/${profileReference.id}/file`}
-                    alt={`${displayName} approved reference`}
-                  />
-                ) : (
-                  <span>{modelInitials(character.name)}</span>
-                )}
-              </div>
+            <article className="identity-hero talent-comp-card talent-career-snapshot">
               <div>
-                <span>Comp Card</span>
-                <h2>{displayName}</h2>
+                <span>Career Snapshot</span>
                 <p>{careerSummary.shortPositioning}</p>
-                <dl className="profile-facts compact-profile-facts">
-                  <div><dt>Stage</dt><dd>{talentStageLabel(careerSummary.stage)}</dd></div>
-                  <div><dt>Agency priority</dt><dd>{agencyPriorityLabel(careerSummary.agencyPriority)}</dd></div>
-                  <div><dt>Best platform</dt><dd>{careerSummary.bestPlatform}</dd></div>
-                  <div><dt>Identity stability</dt><dd>{careerSummary.identityStability}</dd></div>
-                </dl>
               </div>
             </article>
 
@@ -5250,7 +5225,6 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
         <div>
           <span className="eyebrow">Creative assignments</span>
           <h1>Booking Desk</h1>
-          <p>Plan the next piece of work for represented talent, then send the treatment into production.</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -5277,36 +5251,6 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
           ))}
         </div>
       </section>
-
-      {bookingModel && (
-        <section className="booking-assignment-panel" aria-label="Current booking assignment">
-          <article>
-            <span>Talent</span>
-            <strong>{bookingModel.talentName}</strong>
-            <p>{bookingModel.careerGoal}</p>
-          </article>
-          <article>
-            <span>Platform</span>
-            <strong>{bookingModel.platform}</strong>
-            <p>{bookingModel.audienceHypothesis}</p>
-          </article>
-          <article>
-            <span>Booking Idea</span>
-            <strong>{bookingModel.title}</strong>
-            <p>{bookingModel.bookingIdea}</p>
-          </article>
-          <article>
-            <span>Shoot Brief</span>
-            <strong>{selectedBrief ? "Ready" : "Needed"}</strong>
-            <p>{bookingModel.shootBriefSummary}</p>
-          </article>
-          <article>
-            <span>Creative Treatment</span>
-            <strong>{recipe ? "Ready" : "Needed"}</strong>
-            <p>{bookingModel.creativeTreatmentSummary}</p>
-          </article>
-        </section>
-      )}
 
       <section className="prompt-flow-panel booking-flow-panel" aria-label="Booking Desk workflow">
         {planningSteps.map((step) => (
@@ -5732,8 +5676,8 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
       <StageHandoff data={data} stageId="production" navigate={navigate} />
       <section className="asset-command" aria-label="Asset command">
         <article className="asset-hero">
-          <span>Production setup</span>
-          <h2>{selectedRecipe ? compactInlineText(selectedRecipe.final_prompt, 28) || selectedRecipe.id.replace("prompt_recipe_", "treatment ").slice(0, 15) : "No treatment"}</h2>
+          <span>Production</span>
+          <h2>{selectedRecipe ? "Creative treatment selected" : "No treatment selected"}</h2>
           <p>{generationInProgress ? `${selectedEngine.label} running` : selectedRecipe ? `${selectedEngine.label} selected` : "Select a creative treatment and studio setup."}</p>
           <div className="button-stack">
             <button type="button" onClick={() => navigate("/prompt-studio")}>Booking Desk</button>
@@ -5762,7 +5706,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
       <section className="asset-generation-panel" aria-label="Production setup">
         <article className="settings-preview generation-recipe-panel">
           <div className="section-heading">
-            <h2>Production setup</h2>
+            <h2>Creative treatment</h2>
             <span>{selectedEngine.label}</span>
           </div>
           <div className="form-stack">
@@ -5773,7 +5717,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
         </article>
         <article className="settings-preview generation-engine-panel">
           <div className="section-heading">
-            <h2>Studio setup</h2>
+            <h2>Production engine</h2>
             <button type="button" onClick={() => navigate("/settings")}>Open Studio Ops</button>
           </div>
           <div className="generation-engine-summary">
@@ -6222,7 +6166,7 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
       </section>
       <section className="review-decision-workbench">
         <article className="settings-preview decision-queue-panel">
-          <div className="section-heading"><h2>Decision Queue</h2><span>{filteredDecisionPackets.length}</span></div>
+          <div className="section-heading"><h2>Decisions</h2><span>{filteredDecisionPackets.length}</span></div>
           {filteredDecisionPackets.length === 0 ? (
             <div className="review-clear-state">
               <EmptyState title="Nothing needs approval" body="The Review Desk is clear." />
@@ -6258,7 +6202,6 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
                 <span>{selectedDecision.talentName}</span>
               </div>
               <div className="decision-packet-heading">
-                <span>What is this?</span>
                 <h2>{selectedDecision.title}</h2>
                 <p>{selectedDecision.summary}</p>
               </div>
@@ -6681,9 +6624,6 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
               <span>Technical audit</span>
               <strong>Recent production activity</strong>
             </summary>
-            <div className="section-heading">
-              <h2>Recent production activity</h2>
-            </div>
             <table>
               <thead><tr><th>Source</th><th>Status</th><th>Talent</th><th>Pipeline</th><th>Trigger</th><th>Started</th><th>Duration</th><th /></tr></thead>
               <tbody>
@@ -6967,18 +6907,19 @@ function FeedbackPage({ data, navigate, title = "Audience" }: { data: AppData; n
       <header className="topbar page-heading">
         <div>
           <h1>{title}</h1>
-          <p>What did the public tell us about this talent?</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
       <StageHandoff data={data} stageId="feedback" navigate={navigate} />
       <section className="feedback-command audience-command" aria-label="Audience command">
-        <article>
-          <span>Audience result</span>
-          <strong>{selectedDebrief?.result.label ?? "Unknown"}</strong>
-          <p>{selectedDebrief?.summary ?? "No audience response has been logged yet."}</p>
-        </article>
+        {selectedDebrief && (
+          <article>
+            <span>Audience result</span>
+            <strong>{selectedDebrief.result.label}</strong>
+            <p>{selectedDebrief.summary}</p>
+          </article>
+        )}
         <article>
           <span>Career direction</span>
           <strong>{pendingCareerDirectionCount}</strong>
@@ -6995,7 +6936,7 @@ function FeedbackPage({ data, navigate, title = "Audience" }: { data: AppData; n
           <article className="settings-preview feedback-queue audience-debrief-queue">
             <div className="section-heading"><h2>Audience Debriefs</h2><span>{audienceDebriefs.length}</span></div>
             {audienceDebriefs.length === 0 ? (
-              <EmptyState title="No debriefs yet" body="Log public response from a live placement to create the first Audience Debrief." />
+              <EmptyState title="No debriefs yet" body="Log a live placement response to create one." />
             ) : (
               <div className="compact-list">
                 {audienceDebriefs.map((debrief) => (
@@ -7039,7 +6980,7 @@ function FeedbackPage({ data, navigate, title = "Audience" }: { data: AppData; n
             </button>
           </div>
           {!selectedDebrief ? (
-            <EmptyState title="No public response yet" body="Log audience response from a live placement to see what worked, what failed, and what should change next." />
+            <EmptyState title="Choose a debrief" body="Audience findings appear after a response is logged." />
           ) : (
             <div className="audience-debrief-body">
               <div className="audience-result-card">
@@ -7290,29 +7231,15 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
         <div>
           <p className="eyebrow">Agency guide</p>
           <h1>How Virtual Agency Studio works</h1>
-          <p>VAS is a local-first operating desk for scouting, developing, booking, reviewing, publishing, and evolving virtual talent.</p>
         </div>
       </header>
 
       <section className="help-shell">
-        <article className="help-intro">
+        <article className="help-intro help-intro-distilled">
           <div>
             <span>Core idea</span>
             <h2>One character moves through a repeatable production cycle.</h2>
-            <p>
-              The system is not a generic dashboard. It is an agency workflow for scouting talent, producing portfolio shots,
-              reviewing social packages, publishing manually, logging audience response, and using that response to propose career evolution.
-            </p>
-          </div>
-          <div className="help-quick-start">
-            <span>First session</span>
-            <ol>
-              <li>Start in Scouting when a new face or new agency work should begin.</li>
-              <li>Use Director's Desk to see current decisions and anything needing attention.</li>
-              <li>Use Review Desk to approve, revise, or reject prepared work.</li>
-              <li>Use Publishing to plan or record manual placements.</li>
-              <li>Use Audience to log response and review what the studio learned.</li>
-            </ol>
+            <p>Scout talent, produce work, review decisions, publish manually, and use audience response to guide the next booking.</p>
           </div>
         </article>
 
@@ -7345,8 +7272,7 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
                 <div className="help-stage-index">{String(index + 1).padStart(2, "0")}</div>
                 <div>
                   <h3>{stage.label}</h3>
-                  <p>{stage.intent}</p>
-                  <small>{stage.operatorAction}</small>
+                  <p>{stage.operatorAction}</p>
                 </div>
                 <button type="button" onClick={() => navigate(stage.path)}>
                   Open
