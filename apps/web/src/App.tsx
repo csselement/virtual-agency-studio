@@ -2729,8 +2729,8 @@ function StageHandoff({
   return (
     <section className={`stage-handoff stage-handoff-${currentStatus}`} aria-label={`${stage.label} workflow handoff`}>
       <div>
-        <span>Current stage</span>
-        <strong>{stage.label}</strong>
+        <span>{primaryActionIsCurrentPage ? "Stage status" : "Current stage"}</span>
+        {!primaryActionIsCurrentPage && <strong>{stage.label}</strong>}
         <p>{presentation.detail}</p>
       </div>
       <div>
@@ -5678,7 +5678,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
         <article className="asset-hero">
           <span>Production</span>
           <h2>{selectedRecipe ? "Creative treatment selected" : "No treatment selected"}</h2>
-          <p>{generationInProgress ? `${selectedEngine.label} running` : selectedRecipe ? `${selectedEngine.label} selected` : "Select a creative treatment and studio setup."}</p>
+          <p>{generationInProgress ? `${selectedEngine.label} running` : selectedRecipe ? "Ready to produce" : "Choose a treatment and engine."}</p>
           <div className="button-stack">
             <button type="button" onClick={() => navigate("/prompt-studio")}>Booking Desk</button>
             <button className="primary-action" type="button" onClick={generateImage} disabled={!selectedRecipeId || generationInProgress}>
@@ -5706,8 +5706,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
       <section className="asset-generation-panel" aria-label="Production setup">
         <article className="settings-preview generation-recipe-panel">
           <div className="section-heading">
-            <h2>Creative treatment</h2>
-            <span>{selectedEngine.label}</span>
+            <h2>Production inputs</h2>
           </div>
           <div className="form-stack">
             <label>Creative treatment<select value={selectedRecipeId} onChange={(event) => setSelectedRecipeId(event.target.value)}>{recipes.length === 0 && <option value="">No treatments</option>}{recipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{assetRecipeLabel(recipe)}</option>)}</select></label>
@@ -7769,7 +7768,6 @@ function SettingsPage({ data, navigate }: { data: AppData; navigate: (path: stri
         <div>
           <span className="eyebrow">Studio operations</span>
           <h1>Studio Ops</h1>
-          <p>Production logs, engines, studio schedule, routing, workflow engines, and technical audit tools.</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -7818,18 +7816,6 @@ function SettingsPage({ data, navigate }: { data: AppData; navigate: (path: stri
               <div><dt>Provider mode</dt><dd>{settings.mockProviders ? "Mock providers" : "Live provider routing"}</dd></div>
               <div><dt>Recent failure</dt><dd>{studioOps.productionLogSummary.latestFailure ? studioOps.productionLogSummary.latestFailure.title : "None"}</dd></div>
             </dl>
-          </article>
-          <article className="settings-preview ops-domain-panel">
-            <div className="section-heading"><h2>Technical Areas</h2></div>
-            <div className="ops-domain-grid">
-              {settingsTabs.filter((tab) => tab.id !== "overview").map((tab) => (
-                <button key={tab.id} type="button" onClick={() => setSettingsView(tab.id)}>
-                  <span>{tab.label}</span>
-                  <strong>{tab.value}</strong>
-                  <small>{tab.detail}</small>
-                </button>
-              ))}
-            </div>
           </article>
           <article className="settings-preview provider-readiness-panel">
             <div className="section-heading"><h2>Provider Readiness</h2><span>{configuredProviderCount}</span></div>

@@ -2011,7 +2011,7 @@ h1 {
   margin-bottom: 0;
 }
 
-.talent-career-snapshot {
+.identity-hero.talent-career-snapshot {
   grid-template-columns: 1fr;
 }
 
@@ -2295,7 +2295,7 @@ h1 {
 }
 
 .studio-ops-overview {
-  grid-template-columns: minmax(280px, 0.62fr) minmax(0, 1.08fr) minmax(280px, 0.72fr);
+  grid-template-columns: minmax(320px, 0.86fr) minmax(320px, 1.14fr);
 }
 
 .studio-ops-logs,
@@ -8977,7 +8977,7 @@ summary {
   }
 
   .studio-ops-overview {
-    grid-template-columns: minmax(300px, 0.66fr) minmax(0, 1fr) minmax(260px, 0.64fr) !important;
+    grid-template-columns: minmax(340px, 0.82fr) minmax(340px, 1.18fr) !important;
   }
 
   .studio-ops-logs,
