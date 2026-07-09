@@ -1643,14 +1643,63 @@ h1 {
 }
 
 .roster-lane-filter {
-  grid-template-columns: repeat(auto-fit, minmax(154px, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 4px;
+  padding: 4px;
+  border: 1px solid var(--color-border);
+  border-radius: var(--radius-md);
+  background: #f5f5f4;
 }
 
 .roster-lane-filter button {
-  align-items: start;
   display: grid;
+  align-items: center;
   grid-template-columns: minmax(0, 1fr) auto;
-  min-height: 58px;
+  gap: 4px 10px;
+  min-height: 60px;
+  padding: 8px 10px;
+  border-color: transparent;
+  background: transparent;
+  transition: background-color 180ms cubic-bezier(0.22, 1, 0.36, 1), border-color 180ms cubic-bezier(0.22, 1, 0.36, 1);
+}
+
+.roster-lane-filter button:hover {
+  border-color: var(--color-border);
+  background: #fafaf9;
+}
+
+.roster-lane-filter button.active {
+  border-color: #44403c;
+  background: #292524;
+}
+
+.roster-lane-filter button:focus-visible {
+  position: relative;
+  z-index: 1;
+  outline: 2px solid #78716c;
+  outline-offset: 2px;
+}
+
+.roster-lane-filter button.active span,
+.roster-lane-filter button.active small {
+  color: #f5f5f4;
+}
+
+.roster-lane-filter button strong {
+  display: grid;
+  min-width: 24px;
+  height: 24px;
+  padding: 0 5px;
+  border: 1px solid #d6d3d1;
+  border-radius: var(--radius-sm);
+  background: #fafaf9;
+  place-items: center;
+}
+
+.roster-lane-filter button.active strong {
+  border-color: #78716c;
+  background: #44403c;
+  color: #fafaf9;
 }
 
 .roster-lane-filter small {
@@ -1661,6 +1710,29 @@ h1 {
   line-height: 1.25;
   text-overflow: ellipsis;
   white-space: nowrap;
+}
+
+@media (max-width: 900px) {
+  .roster-lane-filter {
+    display: flex;
+    gap: 4px;
+    padding: 4px;
+    overflow-x: auto;
+    overscroll-behavior-x: contain;
+    scroll-snap-type: x proximity;
+  }
+
+  .roster-lane-filter button {
+    flex: 0 0 172px;
+    min-height: 64px;
+    scroll-snap-align: start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .roster-lane-filter button {
+    transition: none;
+  }
 }
 
 .talent-stage-pill {

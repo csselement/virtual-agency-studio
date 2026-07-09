@@ -4267,6 +4267,7 @@ function CharactersPage({
       <section className="character-status-lanes roster-lane-filter" aria-label="Roster lanes">
         {[{ id: "all" as const, label: "All", detail: "full agency roster", talent: data.characters }, ...rosterLanes].map((lane) => (
           <button
+            aria-pressed={laneFilter === lane.id}
             className={laneFilter === lane.id ? "active" : ""}
             key={lane.id}
             type="button"
