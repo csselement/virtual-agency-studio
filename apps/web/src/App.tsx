@@ -465,6 +465,15 @@ export const supportNavPaths = ["/help"];
 const navItems = workModeModel;
 
 const workModeSteps = workModeModel.filter((mode) => !["command", "settings", "help", "runs"].includes(mode.id));
+const newFaceIntakeSteps = [
+  "Market Opportunity",
+  "Identity Seed",
+  "Look Direction",
+  "Voice and Inner Life",
+  "Platform Fit",
+  "First Portfolio Test",
+  "New Face Dossier"
+] as const;
 
 const runTypeLabels: Record<string, string> = {
   character_birth: "New Face Birth",
@@ -680,6 +689,8 @@ function usePath() {
   const navigate = (nextPath: string) => {
     window.history.pushState({}, "", nextPath);
     setPath(window.location.pathname);
+    window.scrollTo({ top: 0, left: 0, behavior: "auto" });
+    window.requestAnimationFrame(() => document.getElementById("workspace")?.focus({ preventScroll: true }));
   };
 
   return { path, navigate };
@@ -822,6 +833,7 @@ function assetStatusLabel(status: string) {
 }
 
 const rawIdTextPattern = /\b(?:asset|run|draft|prompt_recipe|feedback|reflection|proposal|activity|brief|char)_[a-z0-9-]+\b/gi;
+const generatedPackageTitlePattern = /^(?:post|placement) package for [0-9a-f]{8}(?:-[0-9a-f-]+)?$/i;
 
 export function safeAssetAltText(altText: string | null | undefined, fallback: string) {
   const source = altText?.trim();
@@ -834,6 +846,64 @@ export function safeAssetAltText(altText: string | null | undefined, fallback: s
     .trim();
   if (!stripped || /^mock alt text\b/i.test(stripped)) return fallback;
   return stripped;
+}
+
+export function agencyFacingPackageTitle(title: string | null | undefined, talentName?: string | null) {
+  const source = title?.trim();
+  if (!source || generatedPackageTitlePattern.test(source)) {
+    return talentName ? `${displayModelName(talentName)} placement` : "Placement package";
+  }
+  return source;
+}
+
+export function agencyFacingStagePresentation(
+  stageId: WorkflowStageId,
+  detail: string,
+  primaryActionLabel: string,
+  primaryActionPath: string
+) {
+  const normalizedDetail = agencyFacingCountDetail(detail);
+  const normalizedPath = remapLegacyModePath(primaryActionPath);
+  if (stageId === "birth") {
+    return {
+      detail: normalizedDetail.replace(/Birth Run output/gi, "Birth Dossier"),
+      primaryActionLabel: "Review Birth Dossier",
+      primaryActionPath: "/create"
+    };
+  }
+  if (stageId === "review") {
+    return {
+      detail: normalizedDetail,
+      primaryActionLabel: "Review Decisions",
+      primaryActionPath: "/review"
+    };
+  }
+  if (stageId === "publishing") {
+    return {
+      detail: normalizedDetail,
+      primaryActionLabel: "Open Publishing",
+      primaryActionPath: "/calendar"
+    };
+  }
+  if (stageId === "production") {
+    return {
+      detail: normalizedDetail,
+      primaryActionLabel: "Review Portfolio",
+      primaryActionPath: "/library"
+    };
+  }
+  if (stageId === "feedback") {
+    return {
+      detail: normalizedDetail,
+      primaryActionLabel: /reflection|debrief/i.test(primaryActionLabel) ? "Debrief Audience Response" : "Log Audience Response",
+      primaryActionPath: normalizedPath
+    };
+  }
+  return { detail: normalizedDetail, primaryActionLabel, primaryActionPath: normalizedPath };
+}
+
+function agencyFacingCountDetail(detail: string) {
+  return detail.replace(/^1 (.+?) need\b/i, "1 $1 needs");
 }
 
 function remapLegacyModePath(path: string) {
@@ -1671,11 +1741,11 @@ function reflectionPayload(reflection: ReflectionEntry | null | undefined) {
 function reflectionField(reflection: ReflectionEntry | null | undefined, key: string, label: string) {
   const payload = reflectionPayload(reflection);
   const value = payload[key];
-  if (typeof value === "string" && value.trim()) return value.trim();
+  if (typeof value === "string" && value.trim()) return value.trim().replace(/^Mock analysis:\s*/i, "");
   const line = reflection?.body
     ?.split("\n")
     .find((entry) => entry.toLowerCase().startsWith(`${label.toLowerCase()}:`));
-  return line?.replace(new RegExp(`^${label}:\\s*`, "i"), "").trim() ?? "";
+  return line?.replace(new RegExp(`^${label}:\\s*`, "i"), "").trim().replace(/^Mock analysis:\s*/i, "") ?? "";
 }
 
 function matchingReflection(character: CharacterDetail, feedback: SocialFeedback) {
@@ -2184,7 +2254,7 @@ export function buildDirectorDeskModel(data: AppData, error: string | null = nul
     audienceSignals.push({
       id: "audience-attention",
       title: feedbackStage.primaryActionLabel === "Run reflection" ? "Audience debrief ready" : "Audience response needs logging",
-      detail: feedbackStage.detail,
+      detail: agencyFacingCountDetail(feedbackStage.detail),
       path: stagePath(feedbackStage, "/insights"),
       actionLabel: feedbackStage.primaryActionLabel === "Run reflection" ? "Debrief Response" : "Log Response",
       count: feedbackStage.count,
@@ -2253,8 +2323,6 @@ export function buildDirectorDeskModel(data: AppData, error: string | null = nul
       : "Schedule enabled"
     : "Schedule paused";
   const studioNeedsAttention = Boolean(error) || !data.health?.ok || failedRuns.length > 0 || blockedStageCount > 0;
-  const primaryDecision = todayDecisions[0];
-
   return {
     todayDecisions,
     starWatch,
@@ -2263,7 +2331,7 @@ export function buildDirectorDeskModel(data: AppData, error: string | null = nul
     publishingFollowUp: publishingFollowUp.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)).slice(0, 3),
     primaryAction: {
       label: "Review Today's Decisions",
-      path: primaryDecision?.path ?? "/review"
+      path: "/review"
     },
     studioOpsHealth: {
       summary: studioNeedsAttention ? "Studio Ops: needs attention" : "Studio Ops: healthy",
@@ -2652,12 +2720,13 @@ function StageHandoff({
   const currentDetail = "detail" in stage ? stage.detail : "Ready";
   const primaryActionPath = "primaryActionPath" in stage ? stage.primaryActionPath : stage.path;
   const primaryActionLabel = "primaryActionLabel" in stage ? stage.primaryActionLabel : `Open ${stage.label}`;
+  const presentation = agencyFacingStagePresentation(stageId, currentDetail, primaryActionLabel, primaryActionPath);
   return (
     <section className={`stage-handoff stage-handoff-${currentStatus}`} aria-label={`${stage.label} workflow handoff`}>
       <div>
         <span>Current stage</span>
         <strong>{stage.label}</strong>
-        <p>{currentDetail}</p>
+        <p>{presentation.detail}</p>
       </div>
       <div>
         <span>Next</span>
@@ -2666,10 +2735,10 @@ function StageHandoff({
       </div>
       <div className="stage-handoff-actions">
         <em>{currentStatus}</em>
-        <button className="primary-action" type="button" onClick={() => navigate(primaryActionPath)}>
-          {primaryActionLabel}
+        <button className="primary-action" type="button" onClick={() => navigate(presentation.primaryActionPath)}>
+          {presentation.primaryActionLabel}
         </button>
-        {nextStage && nextStage.path !== primaryActionPath && (
+        {nextStage && nextStage.path !== presentation.primaryActionPath && (
           <button type="button" onClick={() => navigate(nextStage.path)}>
             Continue
           </button>
@@ -2882,7 +2951,7 @@ function AppShell({
         </div>
       </aside>
 
-      <main className="workspace" id="workspace">
+      <main className="workspace" id="workspace" tabIndex={-1}>
         <div className="workspace-chrome">
           <div className="workspace-status-strip" aria-label="Studio Ops health">
             <span><Circle aria-hidden="true" size={7} weight="fill" />Studio Ops Health</span>
@@ -3100,6 +3169,7 @@ function CreateModePage({
   const [pendingAction, setPendingAction] = useState<string | null>(null);
   const [formError, setFormError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
+  const [intakeStep, setIntakeStep] = useState(0);
   const [name, setName] = useState("");
   const [marketOpportunity, setMarketOpportunity] = useState("");
   const [audiencePlatform, setAudiencePlatform] = useState("");
@@ -3149,6 +3219,7 @@ function CreateModePage({
   const approvedNewFaces = scopedCharacters.filter((character) => character.status.toLowerCase().includes("approved")).length;
   const intakeReady = Boolean(name.trim() && (marketOpportunity.trim() || initialSummary.trim() || uniquenessHook.trim()));
   const latestBirthRun = dossier?.latestBirthRun ?? null;
+  const intakeStepTitle = newFaceIntakeSteps[intakeStep] ?? newFaceIntakeSteps[0];
 
   useEffect(() => {
     if (selectedCharacterId && scopedCharacters.some((character) => character.id === selectedCharacterId)) {
@@ -3315,57 +3386,99 @@ function CreateModePage({
             <span>{intakeReady ? "Ready" : "Draft"}</span>
           </div>
           <div className="scouting-stepper" aria-label="New Face Intake steps">
-            {["Market Opportunity", "Identity Seed", "Look Direction", "Voice and Inner Life", "Platform Fit", "First Portfolio Test", "New Face Dossier"].map((step, index) => (
-              <span key={step}><b>{index + 1}</b>{step}</span>
+            {newFaceIntakeSteps.map((step, index) => (
+              <button
+                className={`${index === intakeStep ? "active" : ""}${index < intakeStep ? " complete" : ""}`}
+                key={step}
+                type="button"
+                aria-current={index === intakeStep ? "step" : undefined}
+                onClick={() => setIntakeStep(index)}
+              >
+                <b>{index + 1}</b>{step}
+              </button>
             ))}
           </div>
+          <div className="intake-step-status" aria-live="polite">
+            <span>Step {intakeStep + 1} of {newFaceIntakeSteps.length}</span>
+            <strong>{intakeStepTitle}</strong>
+            <p>Your entries are saved while you move between steps.</p>
+          </div>
           <div className="form-stack scouting-form">
-            <fieldset>
-              <legend>Market Opportunity</legend>
-              <label>What kind of talent is missing?<textarea value={marketOpportunity} onChange={(event) => setMarketOpportunity(event.target.value)} /></label>
-              <label>Audience or platform<input value={audiencePlatform} onChange={(event) => setAudiencePlatform(event.target.value)} /></label>
-              <label>What makes this identity different?<textarea value={differentiator} onChange={(event) => setDifferentiator(event.target.value)} /></label>
-            </fieldset>
-            <fieldset>
-              <legend>Identity Seed</legend>
-              <label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="New Face name" /></label>
-              <label>Public archetype<input value={publicArchetype} onChange={(event) => setPublicArchetype(event.target.value)} /></label>
-              <label>Emotional tone<input value={emotionalTone} onChange={(event) => setEmotionalTone(event.target.value)} /></label>
-              <label>Life texture<input value={lifeTexture} onChange={(event) => setLifeTexture(event.target.value)} /></label>
-              <label>Uniqueness hook<input value={uniquenessHook} onChange={(event) => setUniquenessHook(event.target.value)} /></label>
-              <label>Initial summary<textarea value={initialSummary} onChange={(event) => setInitialSummary(event.target.value)} /></label>
-            </fieldset>
-            <fieldset>
-              <legend>Look Direction</legend>
-              <label>Visual identity<textarea value={visualIdentity} onChange={(event) => setVisualIdentity(event.target.value)} /></label>
-              <label>Style language<input value={styleLanguage} onChange={(event) => setStyleLanguage(event.target.value)} /></label>
-              <label>Reference constraints<textarea value={referenceConstraints} onChange={(event) => setReferenceConstraints(event.target.value)} /></label>
-              <label>What to avoid<textarea value={avoidNotes} onChange={(event) => setAvoidNotes(event.target.value)} /></label>
-              <label>Identity consistency notes<textarea value={consistencyNotes} onChange={(event) => setConsistencyNotes(event.target.value)} /></label>
-            </fieldset>
-            <fieldset>
-              <legend>Voice and Inner Life</legend>
-              <label>Voice guide<textarea value={voiceGuide} onChange={(event) => setVoiceGuide(event.target.value)} /></label>
-              <label>Emotional depth<textarea value={emotionalDepth} onChange={(event) => setEmotionalDepth(event.target.value)} /></label>
-              <label>Recurring tensions<textarea value={recurringTensions} onChange={(event) => setRecurringTensions(event.target.value)} /></label>
-              <label>Values<input value={values} onChange={(event) => setValues(event.target.value)} /></label>
-              <label>Public/private contrast<textarea value={publicPrivateContrast} onChange={(event) => setPublicPrivateContrast(event.target.value)} /></label>
-            </fieldset>
-            <fieldset>
-              <legend>Platform Fit</legend>
-              <label>Primary platform<select value={primaryPlatform} onChange={(event) => setPrimaryPlatform(event.target.value)}>{platformOptions.map((platform) => <option key={platform} value={platform}>{platform}</option>)}</select></label>
-              <label>Secondary platforms<input value={secondaryPlatforms} onChange={(event) => setSecondaryPlatforms(event.target.value)} /></label>
-              <label>Content strengths<textarea value={contentStrengths} onChange={(event) => setContentStrengths(event.target.value)} /></label>
-              <label>Public appeal hypothesis<textarea value={publicAppeal} onChange={(event) => setPublicAppeal(event.target.value)} /></label>
-            </fieldset>
-            <fieldset>
-              <legend>First Portfolio Test</legend>
-              <label>Recommended test<textarea value={portfolioTest} onChange={(event) => setPortfolioTest(event.target.value)} /></label>
-              <label>Identity drift risk<textarea value={driftRisk} onChange={(event) => setDriftRisk(event.target.value)} /></label>
-            </fieldset>
-            <button className="primary-action" type="button" onClick={createNewFace} disabled={pendingAction !== null || !intakeReady}>
-              {pendingAction === "create" ? "Creating Dossier" : "Create New Face Dossier"}
-            </button>
+            {intakeStep === 0 && (
+              <fieldset>
+                <legend>Market Opportunity</legend>
+                <label>What kind of talent is missing?<textarea value={marketOpportunity} onChange={(event) => setMarketOpportunity(event.target.value)} /></label>
+                <label>Audience or platform<input value={audiencePlatform} onChange={(event) => setAudiencePlatform(event.target.value)} /></label>
+                <label>What makes this identity different?<textarea value={differentiator} onChange={(event) => setDifferentiator(event.target.value)} /></label>
+              </fieldset>
+            )}
+            {intakeStep === 1 && (
+              <fieldset>
+                <legend>Identity Seed</legend>
+                <label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="New Face name" /></label>
+                <label>Public archetype<input value={publicArchetype} onChange={(event) => setPublicArchetype(event.target.value)} /></label>
+                <label>Emotional tone<input value={emotionalTone} onChange={(event) => setEmotionalTone(event.target.value)} /></label>
+                <label>Life texture<input value={lifeTexture} onChange={(event) => setLifeTexture(event.target.value)} /></label>
+                <label>Uniqueness hook<input value={uniquenessHook} onChange={(event) => setUniquenessHook(event.target.value)} /></label>
+                <label>Initial summary<textarea value={initialSummary} onChange={(event) => setInitialSummary(event.target.value)} /></label>
+              </fieldset>
+            )}
+            {intakeStep === 2 && (
+              <fieldset>
+                <legend>Look Direction</legend>
+                <label>Visual identity<textarea value={visualIdentity} onChange={(event) => setVisualIdentity(event.target.value)} /></label>
+                <label>Style language<input value={styleLanguage} onChange={(event) => setStyleLanguage(event.target.value)} /></label>
+                <label>Reference constraints<textarea value={referenceConstraints} onChange={(event) => setReferenceConstraints(event.target.value)} /></label>
+                <label>What to avoid<textarea value={avoidNotes} onChange={(event) => setAvoidNotes(event.target.value)} /></label>
+                <label>Identity consistency notes<textarea value={consistencyNotes} onChange={(event) => setConsistencyNotes(event.target.value)} /></label>
+              </fieldset>
+            )}
+            {intakeStep === 3 && (
+              <fieldset>
+                <legend>Voice and Inner Life</legend>
+                <label>Voice guide<textarea value={voiceGuide} onChange={(event) => setVoiceGuide(event.target.value)} /></label>
+                <label>Emotional depth<textarea value={emotionalDepth} onChange={(event) => setEmotionalDepth(event.target.value)} /></label>
+                <label>Recurring tensions<textarea value={recurringTensions} onChange={(event) => setRecurringTensions(event.target.value)} /></label>
+                <label>Values<input value={values} onChange={(event) => setValues(event.target.value)} /></label>
+                <label>Public/private contrast<textarea value={publicPrivateContrast} onChange={(event) => setPublicPrivateContrast(event.target.value)} /></label>
+              </fieldset>
+            )}
+            {intakeStep === 4 && (
+              <fieldset>
+                <legend>Platform Fit</legend>
+                <label>Primary platform<select value={primaryPlatform} onChange={(event) => setPrimaryPlatform(event.target.value)}>{platformOptions.map((platform) => <option key={platform} value={platform}>{platform}</option>)}</select></label>
+                <label>Secondary platforms<input value={secondaryPlatforms} onChange={(event) => setSecondaryPlatforms(event.target.value)} /></label>
+                <label>Content strengths<textarea value={contentStrengths} onChange={(event) => setContentStrengths(event.target.value)} /></label>
+                <label>Public appeal hypothesis<textarea value={publicAppeal} onChange={(event) => setPublicAppeal(event.target.value)} /></label>
+              </fieldset>
+            )}
+            {intakeStep === 5 && (
+              <fieldset>
+                <legend>First Portfolio Test</legend>
+                <label>Recommended test<textarea value={portfolioTest} onChange={(event) => setPortfolioTest(event.target.value)} /></label>
+                <label>Identity drift risk<textarea value={driftRisk} onChange={(event) => setDriftRisk(event.target.value)} /></label>
+              </fieldset>
+            )}
+            {intakeStep === 6 && (
+              <section className="intake-review" aria-label="New Face Dossier review">
+                <div><span>Name</span><strong>{name.trim() || "Add a name in Identity Seed"}</strong></div>
+                <div><span>Market opportunity</span><strong>{marketOpportunity.trim() || "Add a market opportunity"}</strong></div>
+                <div><span>Public promise</span><strong>{initialSummary.trim() || uniquenessHook.trim() || "Add an initial summary or uniqueness hook"}</strong></div>
+                <div><span>Platform</span><strong>{primaryPlatform}</strong></div>
+                <div><span>First portfolio test</span><strong>{portfolioTest.trim() || "Not set yet"}</strong></div>
+                <p>{intakeReady ? "The dossier has the minimum identity promise needed for director review." : "Add a name plus a market opportunity, initial summary, or uniqueness hook before creating the dossier."}</p>
+              </section>
+            )}
+            <div className="intake-step-actions">
+              <button type="button" onClick={() => setIntakeStep((current) => Math.max(0, current - 1))} disabled={intakeStep === 0}>Previous</button>
+              {intakeStep < newFaceIntakeSteps.length - 1 ? (
+                <button className="primary-action" type="button" onClick={() => setIntakeStep((current) => Math.min(newFaceIntakeSteps.length - 1, current + 1))}>Next: {newFaceIntakeSteps[intakeStep + 1]}</button>
+              ) : (
+                <button className="primary-action" type="button" onClick={createNewFace} disabled={pendingAction !== null || !intakeReady}>
+                  {pendingAction === "create" ? "Creating Dossier" : "Create New Face Dossier"}
+                </button>
+              )}
+            </div>
           </div>
         </article>
 
@@ -5576,25 +5689,33 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
         </article>
         <article className="settings-preview generation-engine-panel">
           <div className="section-heading">
-            <h2>Production setup</h2>
+            <h2>Studio setup</h2>
             <button type="button" onClick={() => navigate("/settings")}>Open Studio Ops</button>
           </div>
-          <div className="generation-engine-grid" role="list" aria-label="Production setup choices">
-            {engineOptions.map((engine) => (
-              <button
-                key={engine.value}
-                className={providerOverride === engine.value ? "selected" : ""}
-                type="button"
-                onClick={() => chooseGenerationEngine(engine)}
-                aria-pressed={providerOverride === engine.value}
-              >
-                <span>{engine.label}</span>
-                <strong>{engine.ready ? "Ready" : "Setup needed"}</strong>
-                <small>{engine.detail}</small>
-              </button>
-            ))}
+          <div className="generation-engine-summary">
+            <span>Routing</span>
+            <strong>{providerOverride === "auto" ? "Default studio setup" : "Manual studio setup"}</strong>
+            <small>{selectedEngine.ready ? "Ready for production" : "Setup needs attention in Studio Ops"}</small>
           </div>
-          <p className="generation-engine-note">Auto keeps the default studio setup. Any manual choice is recorded in the production log with the operator note.</p>
+          <details className="asset-route-drawer generation-engine-drawer">
+            <summary>Change production engine</summary>
+            <div className="generation-engine-grid" role="list" aria-label="Production setup choices">
+              {engineOptions.map((engine) => (
+                <button
+                  key={engine.value}
+                  className={providerOverride === engine.value ? "selected" : ""}
+                  type="button"
+                  onClick={() => chooseGenerationEngine(engine)}
+                  aria-pressed={providerOverride === engine.value}
+                >
+                  <span>{engine.label}</span>
+                  <strong>{engine.ready ? "Ready" : "Setup needed"}</strong>
+                  <small>{engine.detail}</small>
+                </button>
+              ))}
+            </div>
+            <p className="generation-engine-note">The default follows Studio Ops routing. Manual changes are recorded in the production log with the operator note.</p>
+          </details>
         </article>
       </section>
       <section className="asset-workbench">
@@ -6015,17 +6136,6 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
           </button>
         ))}
       </section>
-      <section className="review-decision-command" aria-label="Selected decision summary">
-        <article className="review-command review-command-compact">
-          <span>Selected decision</span>
-          <strong>{selectedDecision ? reviewTypeLabel(selectedDecision.type) : "Clear"}</strong>
-          <p>{selectedDecision ? selectedDecision.recommendation : "Nothing needs approval right now."}</p>
-        </article>
-        <article className="decision-next-step">
-          <span>What happens next</span>
-          <strong>{selectedDecision ? selectedDecision.consequence : "The agency can return to booking, portfolio, or roster work."}</strong>
-        </article>
-      </section>
       <section className="review-decision-workbench">
         <article className="settings-preview decision-queue-panel">
           <div className="section-heading"><h2>Decision Queue</h2><span>{filteredDecisionPackets.length}</span></div>
@@ -6063,39 +6173,14 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
                 <span className={statusClass(selectedDecision.type)}>{reviewTypeLabel(selectedDecision.type)}</span>
                 <span>{selectedDecision.talentName}</span>
               </div>
-              {selectedDecision.previewImageAssetId ? (
-                <img className="review-asset-preview" src={`${apiBaseUrl()}/api/assets/${selectedDecision.previewImageAssetId}/file`} alt={selectedDecision.previewAlt} />
-              ) : (
-                <div className="decision-text-preview">
-                  <span>{reviewTypeLabel(selectedDecision.type)}</span>
-                  <strong>{selectedDecision.statusLabel}</strong>
-                  <p>{selectedDecision.summary}</p>
-                </div>
-              )}
               <div className="decision-packet-heading">
                 <span>What is this?</span>
                 <h2>{selectedDecision.title}</h2>
                 <p>{selectedDecision.summary}</p>
               </div>
-              <div className="review-decision-packet decision-packet-grid">
-                <div className="review-packet-item review-packet-recommendation">
-                  <span>Recommendation</span>
-                  <strong>{selectedDecision.recommendation}</strong>
-                </div>
-                <div className="review-packet-item review-packet-reasons">
-                  <span>Why</span>
-                  <ul>
-                    {selectedDecision.why.map((reason) => <li key={reason}>{reason}</li>)}
-                  </ul>
-                </div>
-                <div className="review-packet-item">
-                  <span>Risk</span>
-                  <p>{selectedDecision.risk}</p>
-                </div>
-                <div className="review-packet-item">
-                  <span>What happens next</span>
-                  <p>{selectedDecision.consequence}</p>
-                </div>
+              <div className="review-packet-item review-packet-recommendation review-lead-recommendation">
+                <span>Recommendation</span>
+                <strong>{selectedDecision.recommendation}</strong>
               </div>
               <div className="draft-primary-actions review-actions" aria-label="Director actions">
                 <button className="primary-action" type="button" onClick={handlePrimaryDecision} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "approved" || draftActionPending === "quality" || draftActionPending === "export" || draftActionPending === "publish" || draftActionPending === "proposal:approved"}>
@@ -6126,6 +6211,34 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
                   <button type="button" onClick={() => navigate("/settings")}>Open Studio Ops</button>
                 )}
               </div>
+              <div className="review-decision-packet decision-packet-grid">
+                <div className="review-packet-item review-packet-reasons">
+                  <span>Why</span>
+                  <ul>
+                    {selectedDecision.why.map((reason) => <li key={reason}>{reason}</li>)}
+                  </ul>
+                </div>
+                <div className="review-packet-item">
+                  <span>Risk</span>
+                  <p>{selectedDecision.risk}</p>
+                </div>
+                <div className="review-packet-item">
+                  <span>What happens next</span>
+                  <p>{selectedDecision.consequence}</p>
+                </div>
+              </div>
+              {selectedDecision.previewImageAssetId ? (
+                <figure className="review-preview-figure">
+                  <img className="review-asset-preview" src={`${apiBaseUrl()}/api/assets/${selectedDecision.previewImageAssetId}/file`} alt={selectedDecision.previewAlt} />
+                  <figcaption>Candidate preview</figcaption>
+                </figure>
+              ) : (
+                <div className="decision-text-preview">
+                  <span>{reviewTypeLabel(selectedDecision.type)}</span>
+                  <strong>{selectedDecision.statusLabel}</strong>
+                  <p>{selectedDecision.summary}</p>
+                </div>
+              )}
               {selectedDecision.type === "portfolio_candidate" && selectedAsset && (
                 <details className="editor-drawer asset-decision-drawer">
                   <summary>Decision note</summary>
@@ -6185,6 +6298,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
   const [error, setError] = useState<string | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [selectedEventId, setSelectedEventId] = useState("");
+  const [dossierOpen, setDossierOpen] = useState(true);
   const [latestFeedbackId, setLatestFeedbackId] = useState("");
   const [selectedBucket, setSelectedBucket] = useState(() => readCalendarRouteState().bucket);
   const [feedbackForm, setFeedbackForm] = useState({
@@ -6215,6 +6329,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
         setEvents(payload.events);
         setDrafts(payload.drafts);
         setSelectedEventId((current) => current || payload.events[0]?.id || "");
+        setDossierOpen(Boolean(payload.events.length));
       })
       .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load publishing desk."));
   }, []);
@@ -6278,15 +6393,22 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
   }));
   const responseDueCount = matchingEventsForBucket("needs_feedback").length + (publishedEvents.length && !latestFeedbackId ? 1 : 0);
   const boardEvents = filteredEvents.slice(0, 8);
-  const selectedEvent =
-    filteredEvents.find((event) => event.id === selectedEventId) ??
-    filteredEvents[0] ??
-    events.find((event) => event.id === selectedEventId) ??
-    null;
+  const selectedEvent = dossierOpen
+    ? filteredEvents.find((event) => event.id === selectedEventId) ??
+      filteredEvents[0] ??
+      events.find((event) => event.id === selectedEventId) ??
+      null
+    : null;
   const latestPublished = publishedEvents[0] ?? null;
   const selectedDraft = drafts.find((draft) => draft.id === selectedEvent?.draft_id) ?? drafts[0] ?? null;
   const selectedVariant = selectedDraft?.variants?.find((variant) => variant.platform === selectedEvent?.platform) ?? selectedDraft?.variants?.[0] ?? null;
   const selectedAsset = selectedDraft?.asset ?? null;
+  const characterNames = new Map(data.characters.map((character) => [character.id, displayModelName(character.name)]));
+  const selectedTalentName = selectedDraft?.character_id ? characterNames.get(selectedDraft.character_id) ?? "Unassigned talent" : "Unassigned talent";
+  const selectedPlacementTitle = agencyFacingPackageTitle(selectedDraft?.title, selectedTalentName);
+  const selectedPlacementCaption = selectedVariant?.caption && selectedDraft?.title
+    ? selectedVariant.caption.replace(selectedDraft.title, selectedPlacementTitle)
+    : selectedVariant?.caption;
   const dossierImageUrl = selectedAsset?.id ? `${apiBaseUrl()}/api/assets/${selectedAsset.id}/file` : "";
   const reviewDrafts = drafts.filter((draft) => ["needs_review", "draft_ready", "packaged"].includes(draft.status)).slice(0, 4);
   const recentRows = drafts.slice(0, 4);
@@ -6316,7 +6438,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
       id: draft.id,
       eventId: null,
       platform: draft.variants?.[0]?.platform ?? "draft",
-      title: draft.title,
+      title: agencyFacingPackageTitle(draft.title, characterNames.get(draft.character_id)),
       detail: draft.status.replaceAll("_", " "),
       tone: draft.variants?.[0]?.platform ?? "draft",
       dayIndex: (index + 1) % weekDays.length,
@@ -6328,10 +6450,12 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
   const goToEvent = (direction: -1 | 1) => {
     if (!events.length) return;
     const nextIndex = selectedEventIndex < 0 ? 0 : (selectedEventIndex + direction + events.length) % events.length;
-    setSelectedEventId(events[nextIndex]?.id ?? null);
+    setSelectedEventId(events[nextIndex]?.id ?? "");
+    setDossierOpen(true);
   };
   const selectCurrentWindow = () => {
-    setSelectedEventId(events[0]?.id ?? null);
+    setSelectedEventId(events[0]?.id ?? "");
+    setDossierOpen(Boolean(events.length));
   };
   return (
     <>
@@ -6427,7 +6551,14 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                           <button
                             className={`ledger-post ledger-post-${item.tone.toLowerCase().replace(/[^a-z0-9]/g, "-")}`}
                             type="button"
-                            onClick={() => (item.eventId ? setSelectedEventId(item.eventId) : navigate("/drafts"))}
+                            onClick={() => {
+                              if (item.eventId) {
+                                setSelectedEventId(item.eventId);
+                                setDossierOpen(true);
+                              } else {
+                                navigate("/drafts");
+                              }
+                            }}
                           >
                             <span className="platform-cell">
                               <span className={`platform-mark ${platformClass(item.platform)}`}>{platformIcon(item.platform, 14)}</span>
@@ -6454,16 +6585,20 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                 <button className="review-mini-card" key={draft.id} type="button" onClick={() => navigate("/drafts")}>
                   {draft.asset?.id ? <img src={`${apiBaseUrl()}/api/assets/${draft.asset.id}/file`} alt="" /> : <span aria-hidden="true" />}
                   <strong><span className={`platform-inline ${platformClass(draft.variants?.[0]?.platform)}`}>{platformIcon(draft.variants?.[0]?.platform, 14)}{platformLabel(draft.variants?.[0]?.platform)}</span></strong>
-                  <small>{draft.title}</small>
+                  <small>{agencyFacingPackageTitle(draft.title, characterNames.get(draft.character_id))}</small>
                   <span className="review-due">Due: Today, {String(10 + index * 2).padStart(2, "0")}:00</span>
                   <em>{draft.status === "needs_review" ? "Review" : draft.status.replaceAll("_", " ")}</em>
                 </button>
               ))}
             </div>
           </section>
-          <section className="recent-runs-table" aria-label="Recent publishing runs">
+          <details className="recent-runs-table publication-technical-audit">
+            <summary>
+              <span>Technical audit</span>
+              <strong>Recent production activity</strong>
+            </summary>
             <div className="section-heading">
-              <h2>Recent activity</h2>
+              <h2>Recent production activity</h2>
             </div>
             <table>
               <thead><tr><th>Source</th><th>Status</th><th>Talent</th><th>Pipeline</th><th>Trigger</th><th>Started</th><th>Duration</th><th /></tr></thead>
@@ -6477,12 +6612,16 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                     <td>{index % 2 === 0 ? "Schedule" : "Manual"}</td>
                     <td>{formatDate(draft.created_at)}</td>
                     <td>00:0{index + 1}:4{index}</td>
-                    <td><button className="row-action" type="button" aria-label={`Open production log ${shortRunId(draft.run_id ?? draft.id)}`}><Command aria-hidden="true" size={16} weight="regular" /></button></td>
+                    <td>
+                      {draft.run_id ? (
+                        <button className="row-action" type="button" aria-label={`Open production log ${shortRunId(draft.run_id)}`} onClick={() => navigate(`/runs/${draft.run_id}`)}><Command aria-hidden="true" size={16} weight="regular" /></button>
+                      ) : "—"}
+                    </td>
                   </tr>
                 ))}
               </tbody>
             </table>
-          </section>
+          </details>
         </div>
         <aside className="publication-dossier-panel">
           <div className="dossier-heading">
@@ -6490,7 +6629,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
             <div className="dossier-heading-actions">
               <button type="button" aria-label="Previous publication" onClick={() => goToEvent(-1)}><CaretLeft aria-hidden="true" size={16} weight="bold" /></button>
               <button type="button" aria-label="Next publication" onClick={() => goToEvent(1)}><CaretRight aria-hidden="true" size={16} weight="bold" /></button>
-              <button type="button" aria-label="Close dossier"><XIcon aria-hidden="true" size={16} weight="bold" /></button>
+              <button type="button" aria-label="Close dossier" onClick={() => setDossierOpen(false)}><XIcon aria-hidden="true" size={16} weight="bold" /></button>
             </div>
           </div>
           {!selectedEvent ? <EmptyState title="No event selected" body="Select a publication event to log response." /> : (
@@ -6501,15 +6640,14 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                 <em>{selectedEvent.status.replaceAll("_", " ")}</em>
               </div>
               <div className={selectedAsset?.mime_type?.includes("svg") ? "dossier-media dossier-media-generated" : "dossier-media"}>
-                {dossierImageUrl ? <img src={dossierImageUrl} alt={safeAssetAltText(selectedVariant?.alt_text, selectedDraft?.title ?? "Publication asset")} /> : <span>VA</span>}
+                {dossierImageUrl ? <img src={dossierImageUrl} alt={safeAssetAltText(selectedVariant?.alt_text, selectedPlacementTitle)} /> : <span>VA</span>}
               </div>
-              <h2>{selectedDraft?.title ?? (selectedEvent.live_url ? "Live post" : "Ledger entry")}</h2>
-              <p>{selectedVariant?.caption ?? selectedEvent.notes ?? "No notes recorded."}</p>
+              <h2>{selectedDraft ? selectedPlacementTitle : selectedEvent.live_url ? "Live post" : "Ledger entry"}</h2>
+              <p>{selectedPlacementCaption ?? selectedEvent.notes ?? "No notes recorded."}</p>
               <dl className="profile-facts calendar-facts">
-                <div><dt>Talent</dt><dd>{shortRunId(selectedDraft?.character_id)}</dd></div>
-                <div><dt>Format</dt><dd>{selectedVariant?.post_format ?? "single image"}</dd></div>
+                <div><dt>Talent</dt><dd>{selectedTalentName}</dd></div>
+                <div><dt>Format</dt><dd>{(selectedVariant?.post_format ?? "single image").replaceAll("_", " ")}</dd></div>
                 <div><dt>Tags</dt><dd>{selectedVariant?.hashtags ?? "None"}</dd></div>
-                <div><dt>Source log</dt><dd>{shortRunId(selectedDraft?.run_id ?? selectedEvent.draft_id)}</dd></div>
                 <div><dt>Status</dt><dd>{selectedEvent.status.replaceAll("_", " ")}</dd></div>
               </dl>
               <div className="approval-stack">
@@ -6524,6 +6662,13 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                 {canLogResponse && <button type="button" onClick={() => navigate(`/feedback?eventId=${selectedEvent.id}`)}>Open Audience Response</button>}
                 <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Debrief Audience Response</button>
               </div>
+              <details className="raw-details publication-dossier-audit">
+                <summary>Technical audit</summary>
+                <dl className="profile-facts calendar-facts">
+                  <div><dt>Source log</dt><dd>{shortRunId(selectedDraft?.run_id ?? selectedEvent.draft_id)}</dd></div>
+                  <div><dt>Draft</dt><dd>{shortRunId(selectedEvent.draft_id)}</dd></div>
+                </dl>
+              </details>
             </div>
           )}
         </aside>

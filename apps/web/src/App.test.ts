@@ -1,5 +1,7 @@
 import { describe, expect, it } from "vitest";
 import {
+  agencyFacingPackageTitle,
+  agencyFacingStagePresentation,
   apiBaseUrl,
   buildAudienceDebriefModels,
   buildBookingDeskModel,
@@ -62,6 +64,26 @@ describe("web app config", () => {
     expect(safeAssetAltText("Mock alt text for asset_b230c06e-47a1-479f-b3a7-2b49f395060d.", "Portfolio shot")).toBe("Portfolio shot");
     expect(safeAssetAltText("Editorial shot for asset_b230c06e.", "Portfolio shot")).toBe("Editorial shot");
     expect(safeAssetAltText("Editorial morning scene", "Portfolio shot")).toBe("Editorial morning scene");
+  });
+
+  it("keeps generated package names and workflow handoffs agency-facing", () => {
+    expect(agencyFacingPackageTitle("Post package for 6d41929f", "Lena Vale")).toBe("Lena Vale placement");
+    expect(agencyFacingPackageTitle("Summer gallery story", "Lena Vale")).toBe("Summer gallery story");
+    expect(agencyFacingStagePresentation("birth", "Birth Run output needs operator review", "Review Birth Run", "/runs?type=character_birth")).toEqual({
+      detail: "Birth Dossier needs operator review",
+      primaryActionLabel: "Review Birth Dossier",
+      primaryActionPath: "/create"
+    });
+    expect(agencyFacingStagePresentation("review", "23 runs need review", "Review runs", "/runs?status=needs_review")).toEqual({
+      detail: "23 runs need review",
+      primaryActionLabel: "Review Decisions",
+      primaryActionPath: "/review"
+    });
+    expect(agencyFacingStagePresentation("feedback", "1 published event need response logging", "Log feedback", "/feedback?eventId=event_1")).toEqual({
+      detail: "1 published event needs response logging",
+      primaryActionLabel: "Log Audience Response",
+      primaryActionPath: "/insights?eventId=event_1"
+    });
   });
 
   it("translates home data into a director-facing desk model", () => {
@@ -170,6 +192,7 @@ describe("web app config", () => {
     });
 
     expect(model.primaryAction.label).toBe("Review Today's Decisions");
+    expect(model.primaryAction.path).toBe("/review");
     expect(model.todayDecisions.map((item) => item.title)).toEqual(expect.arrayContaining([
       "talent items need approval",
       "social packages need approval",
@@ -331,7 +354,7 @@ describe("web app config", () => {
             "Next: Create a saveable behind-the-scenes ritual."
           ].join("\n"),
           reflection: {
-            whatWorked: "Calm process framing gave the post save value.",
+            whatWorked: "Mock analysis: Calm process framing gave the post save value.",
             offCharacter: "No major off-character signal was logged by the operator.",
             repeat: "Repeat the morning ritual framing.",
             avoid: "Avoid changing core identity traits based on one post.",
@@ -359,6 +382,7 @@ describe("web app config", () => {
     expect(debriefs).toHaveLength(1);
     expect(debriefs[0].result.label).toBe("Strong");
     expect(debriefs[0].whatWorked.join(" ")).toContain("save value");
+    expect(debriefs[0].whatWorked.join(" ")).not.toContain("Mock analysis");
     expect(debriefs[0].commentThemes.join(" ")).toContain("Saved this");
     expect(debriefs[0].recommendedNextTest).toBe("Create a saveable behind-the-scenes ritual.");
     expect(debriefs[0].careerDirection.actionLabel).toBe("Approve Memory Update");
