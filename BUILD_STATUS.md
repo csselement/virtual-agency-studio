@@ -20,6 +20,275 @@
 
 Phase 12 complete. MVP build package implemented and verified locally. Provider routing hardening implemented and verified.
 
+## UX Refactor Status
+
+- [x] UX Phase 0: Docs and guardrails
+- [x] UX Phase 1: Navigation and language refactor
+- [x] UX Phase 2: Director's Desk
+- [x] UX Phase 3: Roster and Talent Profile
+- [x] UX Phase 4: Scouting / Birth
+- [x] UX Phase 5: Bookings / Production
+- [x] UX Phase 6: Review Desk
+- [x] UX Phase 7: Audience and Strategy
+- [x] UX Phase 8: Studio Ops containment
+- [x] Final UX QA hardening pass
+
+Current UX refactor phase: Phase 8 complete and final QA hardening pass captured. UX refactor rollout is complete through the documented handoff phases.
+
+UX Phase 0 added repo-local guardrails from the handoff package:
+
+- `docs/ux-refactor/UX_PRODUCT_MODEL.md`
+- `docs/ux-refactor/UX_COPY_MAP.md`
+- `docs/ux-refactor/UX_SCREEN_CONTRACTS.md`
+- `docs/ux-refactor/UX_GUARDRAILS.md`
+
+UX Phase 0 verification:
+
+- `git diff --check`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+
+UX Phase 0 outcome:
+
+- Phase 1 completed the runtime navigation and language refactor that remained after the docs-only phase.
+
+UX Phase 1 changed:
+
+- Primary navigation now uses agency-facing labels: Director's Desk, Roster, Scouting, Bookings, Portfolio, Review Desk, Publishing, Audience, Studio Ops, and Guide.
+- The `/runs` route remains functional but is demoted into Studio Ops as Production Logs.
+- Shell copy now says Virtual talent agency, Agency Director, Director, and Studio Ops Health.
+- Key page headings and CTAs now use agency language such as Booking Desk, Start Production, Review Quality, Create Social Package, Prepare Placement Package, Mark Live, and Debrief Audience Response.
+
+UX Phase 1 verification:
+
+- Old shell/nav/CTA phrase search returned no matches for the targeted Phase 1 terms.
+- `git diff --check`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+
+UX Phase 1 known gaps:
+
+- This phase did not redesign layouts or hide existing technical-heavy controls inside Portfolio and Studio Ops.
+- Director's Desk structural debt was carried into Phase 2.
+
+UX Phase 2 changed:
+
+- Director's Desk now starts with Today's Decisions, Star Watch, Today's Bookings, Audience Signals, Publishing Follow-up, and collapsed Studio Ops Health.
+- Home-screen data is translated through a frontend `buildDirectorDeskModel` read model before rendering director-facing sections.
+- The primary CTA is `Review Today's Decisions`.
+- Active production, review queues, publishing follow-up, audience response, and career direction are framed as agency decisions instead of default technical status panels.
+- Studio Ops details are collapsed by default and expose API, production engine, schedule, and failed-production status only when expanded.
+
+UX Phase 2 verification:
+
+- Targeted stale-copy search returned no matches for the prior home hierarchy and machine/system terms.
+- `git diff --check`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- Runtime smoke: local API `/health`, local API `/api/workflow/summary`, and web `/` returned OK from `npm run dev`.
+
+UX Phase 2 known gaps:
+
+- The Director's Desk still derives some subcounts from existing workflow summary detail text. A future `/api/director/desk` read model should provide structured DirectorDecision records.
+- Star Watch uses available run/setup heuristics, not real momentum, audience pull, or development-risk scoring.
+- Today's Bookings can identify active or scheduled work, but richer booking purpose/platform summaries should wait for the Bookings phase.
+
+UX Phase 3 changed:
+
+- Roster now uses provisional talent lanes: Star Talent, Core Talent, Rising Talent, Development, New Faces, At Risk, and Paused / Retired.
+- Roster cards show stage, positioning, best platform, momentum, latest audience signal, and next recommended move instead of raw status or latest technical run names.
+- Talent Profile now starts with a career-facing Comp Card, Stage, Agency Priority, Best Platform, Momentum, Identity Stability, Development Risk, and Next Recommended Move.
+- Pending identity proposals are surfaced as Career Direction Proposals under Director Approvals.
+- Detailed Constitution, Canon, Memory, Appearance Bible, Voice Guide, Platform Personas, and reference editing are kept in a collapsed Identity Bible section.
+- Recent production is translated into a Career Timeline with agency event labels and Production Logs as the traceability escape hatch.
+
+UX Phase 3 verification:
+
+- Targeted stale-copy search returned no matches for the prior roster/profile hierarchy terms.
+- `git diff --check`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- Runtime smoke: local API `/health`, web `/talent`, web `/characters/:id`, and API `/api/characters/:id` returned OK from `npm run dev`.
+
+UX Phase 3 known gaps:
+
+- Roster lane placement is still a frontend heuristic because `/api/characters` does not expose feedback, proposals, assets, or publishing history.
+- Talent scoring is intentionally qualitative; future `/api/talent-careers` or `/api/strategy/star-board` read models should provide structured momentum, audience pull, and risk signals.
+- Portfolio Highlights currently uses reference images because approved portfolio-shot summaries are not yet exposed on the Talent Profile response.
+
+UX Phase 4 changed:
+
+- Scouting now opens as a guided New Face Intake workflow with Market Opportunity, Identity Seed, Look Direction, Voice and Inner Life, Platform Fit, First Portfolio Test, and New Face Dossier steps.
+- Intake uses existing endpoints: new talent summary, initial constitution, appearance, voice, and platform persona records are saved without adding a backend wizard table.
+- The selected candidate now renders a director-facing New Face Dossier with public promise, visual direction, voice/interiority, best initial platform, development risk, recommended first booking, and director decision.
+- Director decisions now act on the New Face with `Approve New Face`, `Revise Identity`, and `Reject Concept` controls.
+- Birth output stays available as a secondary Birth Dossier / Production Log link instead of routing the user straight to the run timeline.
+- Added `buildNewFaceDossier` as a frontend read model and covered it with a unit test to keep dossier copy director-facing.
+
+UX Phase 4 verification:
+
+- Targeted stale-copy search returned no matches for the prior Scouting router hierarchy terms.
+- `git diff --check`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- Runtime smoke: local API `/health`, local API `/api/characters`, web `/create`, and web `/talent` returned OK from `npm run dev`.
+
+UX Phase 4 known gaps:
+
+- Reference image upload still lives in the Talent Profile Identity Bible; the Scouting page captures reference constraints and drift risk but does not yet upload a file inline.
+- The New Face Dossier is a frontend read model derived from existing character/run records. A future backend read endpoint should provide structured scouting dossier data.
+- Birth Run artifacts are still stored as technical run artifacts; Phase 4 changes their placement and language, not the underlying artifact schema.
+
+UX Phase 5 changed:
+
+- Booking Desk now centers the agency chain: Booking Idea, Shoot Brief, Creative Treatment, and Production.
+- Added `buildBookingDeskModel` to translate existing activity candidates, content briefs, and prompt recipes into an assignment-facing Booking model.
+- Added a visible Audience Hypothesis field and persists it into existing shoot brief output text without adding a backend table.
+- Removed the automatic jump to Production Logs after proposing booking ideas; the operator remains in the Booking Desk flow.
+- `Start Production` is now the primary action once a creative treatment is ready and calls the existing image-generation endpoint before routing candidate shots into Portfolio.
+- Full treatment source, negative prompt, treatment ID, identity IDs, and lineage are collapsed under `Technical treatment audit`.
+
+UX Phase 5 verification:
+
+- Targeted stale-copy search returned no Booking Desk matches for prior Prompt Studio labels: Generate activities, Activity Candidate, Content brief, Compose recipe, Prompt recipe, Generate image, Final prompt, and Prompt lineage.
+- `git diff --check`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- Runtime smoke: local API `/health`, local API `/api/characters`, and web `/prompt-studio` returned OK from `npm run dev`.
+
+UX Phase 5 known gaps:
+
+- The Booking model is still a frontend read model over activity candidates, content briefs, and prompt recipes. A future `/api/bookings` endpoint should provide structured assignment status.
+- Audience hypothesis is stored in existing brief output text for this pass; it should become a first-class field before Audience Response evaluation depends on it.
+- Production setup selection remains in Portfolio, while provider/routing details remain in Studio Ops and Production Logs; Booking Desk starts production with default routing.
+
+UX Phase 6 changed:
+
+- Review Desk now renders a unified Decision Queue rather than a social-package-only workbench.
+- Added `buildReviewDecisionPackets` to translate candidate portfolio shots, social packages, proposed career updates, and unrepresented review-gated production jobs into director-facing decision packets.
+- Each selected packet answers: what this is, recommendation, why, risk, what happens next, and director actions.
+- Portfolio decisions can run quality review, approve for publishing, add to portfolio, request revision, or reject through the existing asset endpoints.
+- Social-package decisions can approve, request revision, reject, edit platform copy, prepare placement packages, or mark live through the existing draft and publishing endpoints.
+- Career direction proposals can be approved or rejected from Review Desk through the existing identity proposal endpoint.
+- Raw prompts, provider details, IDs, route/source records, and JSON remain available only under collapsed `Technical audit`.
+
+UX Phase 6 verification:
+
+- Added a focused Review Desk read-model test confirming packet types, required decision fields, action labels, and default technical-source containment.
+- `npm --workspace @virtual-agency/web run test`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- `git diff --check`
+- Targeted stale-copy search found no default Review Desk matches for the prior draft-only review labels or uncollapsed technical labels; remaining matches were the test assertion and Studio Ops help text.
+- Runtime smoke: local API `/health`, `/api/drafts`, `/api/assets`, `/api/characters`, `/api/characters/:id`, and web `/review` returned OK from `npm run dev`.
+
+UX Phase 6 known gaps:
+
+- Review Desk still computes decision packets in the frontend. A future `/api/director-decisions` or `/api/review-queue` endpoint should provide this as a structured backend read model.
+- Studio attention packets can open the production log, but there is not yet a director-facing recover/retry action outside Studio Ops.
+- Revision requests for social packages still map to the existing rejected status because the backend has no separate `needs_revision` draft state.
+
+UX Phase 7 changed:
+
+- Audience now centers `Audience Debrief` before metric entry, answering what worked, what failed, comment themes, meaning for talent, recommended next test, and Career Direction.
+- Added `buildAudienceDebriefModels` to translate existing `SocialFeedback`, feedback reflections, and identity proposals into director-facing debriefs.
+- Audience feedback reflection now keeps the operator on the Audience screen and reloads debrief/proposal data instead of routing into the production log.
+- Career Direction proposal actions are available from the selected debrief: `Approve Memory Update`, `Add to Canon`, Identity Bible approval, and `Ignore Signal`.
+- Raw feedback records, reflection payloads, IDs, and derivation details are contained under collapsed `Metrics detail`, `Technical audit`, and `Strategy derivation`.
+- Added `Strategy / Star Board` with Star Talent, Core Talent, Rising Talent, Development Bets, At Risk, and Paused / Retired lanes.
+- Added `buildStrategyBoardModel` to rank represented talent by momentum, audience pull, identity strength, platform fit, development risk, agency priority, and recommended investment.
+- The response logging form remains available as a secondary `Log New Response` panel for live placements.
+
+UX Phase 7 verification:
+
+- Added focused read-model tests for Audience Debrief wording/proposal linking and Strategy / Star Board lane assignment.
+- `npm --workspace @virtual-agency/web run test`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- `git diff --check`
+- Targeted containment search confirmed Audience defaults now expose debrief/strategy labels while raw metric/detail/source surfaces remain behind collapsed sections.
+- Runtime smoke: local API `/health`, `/api/publishing-events`, `/api/characters`, `/api/characters/:id`, and web `/insights` returned OK from `npm run dev`.
+
+UX Phase 7 known gaps:
+
+- Audience Debrief and Strategy / Star Board are still frontend read models. A future `/api/audience-debriefs` and `/api/strategy/star-board` should provide backend-owned ranking and debrief records.
+- Strategy lane placement intentionally uses transparent heuristics over available feedback/reflection/proposal data, not statistically normalized performance scoring.
+- Audience response is still manually logged from published events; there is no platform API ingestion or historical baseline calculation yet.
+
+UX Phase 8 changed:
+
+- Studio Ops now has an explicit technical workbench model with Overview, Production Logs, Providers, Workflow Engines, Automation, Console, and Technical Audit sections.
+- Added `buildStudioOpsModel` to translate health, provider settings, automation status, workflows, prompt recipes, assets, and runs into a bounded Studio Ops read model.
+- `/settings` now answers the Studio Ops question: `What did the machine do, and is the studio configured correctly?`
+- Production Logs are available as the Studio Ops run index and recent-log ledger; `/runs/:id` is relabeled as `Production Log` with the detail question `What happened behind the scenes?`
+- Provider routing, scheduler controls, workflow engines, manual dispatch, raw IDs, settings snapshots, and automation snapshots are contained inside Studio Ops tabs rather than normal agency workflow surfaces.
+- Added responsive layouts for the Studio Ops overview, production log ledger, and technical audit panels.
+
+UX Phase 8 verification:
+
+- Added a focused Studio Ops read-model test confirming tab labels, production log counts, provider readiness, and technical audit IDs.
+- `npm --workspace @virtual-agency/web run test`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- `git diff --check`
+- Targeted containment search found no stale `settingsView === "routing"`, `opsCards`, `Run Detail`, `Provider Jobs`, `Run list`, or `Production engine keys` matches. Remaining technical ID matches are Studio Ops audit, Production Log detail, schema fields, prior status history, or test fixtures.
+- Runtime smoke: local API `/health`, `/api/settings/providers`, `/api/settings/automation`, and `/api/runs` returned OK; web `/settings`, `/runs`, and `/runs/:id` returned OK from `npm run dev`.
+- Hydrated browser smoke: `/settings` rendered Studio Ops hero copy, Production Logs, Providers, Workflow Engines, Automation, Console, and Technical Audit sections.
+- Ports `4317` and `5173` were clear after stopping the dev server.
+
+UX Phase 8 known gaps:
+
+- Studio Ops is still a frontend aggregation over existing API endpoints. A future `/api/studio-ops` read endpoint should provide the same technical model from the backend.
+- Production Log detail still exposes provider jobs, event payloads, and artifact internals by design; this is acceptable inside Studio Ops but should remain secondary from agency screens.
+- Standalone Playwright is not installed in the repo. Hydrated browser verification covered `/settings`; `/runs/:id` was verified through route smoke and source inspection.
+
+Final UX QA hardening changed:
+
+- Captured final route screenshots under `docs/ux-refactor/final-qa-audit/screenshots` and summarized findings in `docs/ux-refactor/final-qa-audit/README.md`.
+- Fixed Booking Desk desktop horizontal overflow by making the assignment grid use flexible equal-width columns.
+- Fixed mobile nav label clipping by widening mobile nav items.
+- Hardened Director's Desk and Portfolio copy so default agency-facing screens say production setup/studio setup instead of route/provider-engine language.
+- Hardened Portfolio cards and generated asset alt text so provider names, raw asset IDs, and mock-generated alt text do not leak into the default agency-facing or assistive-technology surface.
+
+Final UX QA hardening verification:
+
+- In-app browser screenshot audit covered `/`, `/talent`, `/characters/:id`, `/create`, `/prompt-studio`, `/library`, `/review`, `/calendar`, `/insights`, `/settings`, `/runs`, `/runs/:id`, plus mobile `/` and `/settings`.
+- Refreshed `/` and `/library` screenshots with local Chrome headless directly into `docs/ux-refactor/final-qa-audit/screenshots` after the last Portfolio copy and alt-text hardening patch.
+- Post-fix DOM checks showed no horizontal overflow or clipped text on Booking Desk desktop, Director's Desk mobile, and Studio Ops mobile.
+- Visible text leak checks for Review Desk, Audience Strategy, and Portfolio found no default raw run IDs, prompt recipe IDs, provider jobs, route tiers, raw JSON, workflow JSON, or payload wording after the hardening patch.
+- `npm --workspace @virtual-agency/web run test`
+- `npm run typecheck`
+- `npm run test`
+- `npm run build`
+- `npm run verify:design`
+- `git diff --check`
+- `sips -g pixelWidth -g pixelHeight docs/ux-refactor/final-qa-audit/screenshots/*.png`
+- Ports `4317` and `5173` were clear after stopping the dev server.
+
+Final UX QA hardening known gaps:
+
+- Generated publishing package names can still include UUID-like suffixes; treat this as data/content naming debt for a later publishing-package naming pass.
+- Long full-page mobile screenshots from the in-app browser preview can appear cropped in the chat image viewer even when DOM overflow checks pass. Use direct browser capture review for pixel-perfect mobile signoff.
+- Two refreshed desktop screenshots are Chrome headless viewport captures (`1286 x 900`) instead of the earlier full-page in-app browser captures so the final visual evidence matches the last hardening patch without writing through a stale external Playwright output root.
+- This pass did not claim full WCAG compliance; it focused on rendered layout, language boundaries, visible technical leakage, and route-level workflow clarity.
+
 ## What Changed
 
 - Audited the repository and confirmed it is a new/empty app repo with only the supplied build package.
@@ -116,7 +385,7 @@ Phase 12 complete. MVP build package implemented and verified locally. Provider 
 - Extended provider jobs with attempt index, route tier, route reason, and fallback reason metadata.
 - Added named Comfy workflow storage with editable prompt/negative/seed/output mappings, validation, tier activation, and workflow test endpoint.
 - Upgraded ComfyUI Cloud generation to submit `/api/prompt`, poll job status, fetch job details, download output through `/api/view`, and fail visibly if no materializable output is returned.
-- Added Asset Library route controls for provider override, override reason, and content tier override.
+- Added Asset Library production setup controls for provider override, override reason, and content tier override.
 - Added Settings UI for OpenAI Images and named Comfy workflow management.
 - Added docs for provider routing, OpenAI Images, Comfy workflow activation, and troubleshooting route gates.
 - Registered the Comfy Cloud MCP server in Codex as `comfy-cloud`, completed OAuth account login, and documented the MCP/app-provider split.

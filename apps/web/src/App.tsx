@@ -26,7 +26,7 @@ import {
 import type { ApiHealth } from "@virtual-agency/shared";
 
 type RunStatus = "queued" | "running" | "waiting_for_provider" | "needs_review" | "completed" | "failed" | "cancelled";
-type SettingsView = "routing" | "workflows" | "automation" | "manual";
+type SettingsView = "overview" | "logs" | "providers" | "workflows" | "automation" | "manual" | "audit";
 type PhosphorIconComponent = ComponentType<{
   "aria-hidden"?: boolean;
   className?: string;
@@ -230,6 +230,8 @@ interface ContentBrief {
   content_pillar: string | null;
   visual_direction: string | null;
   caption_angle: string | null;
+  disclosure_flags?: string | null;
+  desired_outputs?: string | null;
 }
 
 interface PromptRecipe {
@@ -247,6 +249,7 @@ interface PromptRecipe {
 interface AssetAnalysis {
   id: string;
   provider: string;
+  summary?: string | null;
   identity_match: string | null;
   identity_score: number;
   quality_score: number;
@@ -314,6 +317,8 @@ interface PublishingEvent {
 interface SocialFeedback {
   id: string;
   draft_id: string;
+  publishing_event_id?: string | null;
+  character_id?: string | null;
   platform: string;
   published_url: string | null;
   impressions: number;
@@ -327,21 +332,34 @@ interface SocialFeedback {
   qualitative_notes: string | null;
   top_comments: string | null;
   operator_judgment: string | null;
+  feedback?: unknown;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface ReflectionEntry {
   id: string;
+  character_id?: string;
   run_id: string | null;
+  draft_id?: string | null;
+  social_feedback_id?: string | null;
   summary: string | null;
   body: string;
+  reflection?: unknown;
+  created_at?: string;
+  updated_at?: string;
 }
 
 interface IdentityProposal {
   id: string;
+  character_id?: string;
+  run_id?: string | null;
   kind: string;
   body: string;
   rationale: string | null;
   risk_level: string;
+  source_run_id?: string | null;
+  source_reflection_id?: string | null;
   status: string;
 }
 
@@ -395,7 +413,7 @@ interface AppData {
 
 type WorkflowStageId = "heartbeat" | "birth" | "production" | "review" | "publishing" | "feedback";
 type WorkflowStageStatus = "blocked" | "ready" | "attention" | "complete";
-type WorkModeId = "command" | "create" | "runs" | "review" | "calendar" | "library" | "talent" | "insights" | "settings" | "help";
+type WorkModeId = "command" | "talent" | "create" | "bookings" | "library" | "review" | "calendar" | "insights" | "settings" | "help" | "runs";
 
 interface WorkflowStageSummary {
   id: WorkflowStageId;
@@ -415,12 +433,12 @@ export const workflowStageModel: Array<{
   path: string;
   icon: PhosphorIconComponent;
 }> = [
-  { id: "heartbeat", label: "Studio", detail: "Attention", path: "/", icon: Pulse },
-  { id: "birth", label: "Create", detail: "Start work", path: "/create", icon: User },
-  { id: "production", label: "Library", detail: "Source material", path: "/library", icon: Package },
-  { id: "review", label: "Review", detail: "Human judgment", path: "/review", icon: CheckSquare },
-  { id: "publishing", label: "Schedule", detail: "Publishing cadence", path: "/calendar", icon: CalendarBlank },
-  { id: "feedback", label: "Insights", detail: "Learning loop", path: "/insights", icon: BookOpen }
+  { id: "heartbeat", label: "Director's Desk", detail: "Today's decisions", path: "/", icon: Pulse },
+  { id: "birth", label: "Scouting", detail: "New faces", path: "/create", icon: User },
+  { id: "production", label: "Portfolio", detail: "Candidate work", path: "/library", icon: Package },
+  { id: "review", label: "Review Desk", detail: "Director approval", path: "/review", icon: CheckSquare },
+  { id: "publishing", label: "Publishing", detail: "Placements", path: "/calendar", icon: CalendarBlank },
+  { id: "feedback", label: "Audience", detail: "Audience response", path: "/insights", icon: BookOpen }
 ];
 
 export const workModeModel: Array<{
@@ -430,30 +448,32 @@ export const workModeModel: Array<{
   path: string;
   icon: PhosphorIconComponent;
 }> = [
-  { id: "command", label: "Studio", path: "/", detail: "Attention", icon: Pulse },
-  { id: "create", label: "Create", path: "/create", detail: "Start work", icon: MagicWand },
-  { id: "review", label: "Review", path: "/review", detail: "Human judgment", icon: CheckSquare },
-  { id: "calendar", label: "Schedule", path: "/calendar", detail: "Cadence", icon: CalendarBlank },
-  { id: "library", label: "Library", path: "/library", detail: "Source material", icon: Package },
-  { id: "talent", label: "Talent", path: "/talent", detail: "Characters", icon: User },
-  { id: "insights", label: "Insights", path: "/insights", detail: "Learning loop", icon: BookOpen },
-  { id: "settings", label: "Settings", path: "/settings", detail: "System controls", icon: Gear }
+  { id: "command", label: "Director's Desk", path: "/", detail: "Today's decisions", icon: Pulse },
+  { id: "talent", label: "Roster", path: "/talent", detail: "Represented talent", icon: User },
+  { id: "create", label: "Scouting", path: "/create", detail: "New faces", icon: MagicWand },
+  { id: "bookings", label: "Bookings", path: "/prompt-studio", detail: "Creative briefs", icon: Article },
+  { id: "library", label: "Portfolio", path: "/library", detail: "Candidate work", icon: Package },
+  { id: "review", label: "Review Desk", path: "/review", detail: "Director approval", icon: CheckSquare },
+  { id: "calendar", label: "Publishing", path: "/calendar", detail: "Placements", icon: CalendarBlank },
+  { id: "insights", label: "Audience", path: "/insights", detail: "Audience response", icon: BookOpen },
+  { id: "settings", label: "Studio Ops", path: "/settings", detail: "Studio operations", icon: Gear },
+  { id: "help", label: "Guide", path: "/help", detail: "Agency guide", icon: BookOpen }
 ];
 
 export const supportNavPaths = ["/help"];
 
 const navItems = workModeModel;
 
-const workModeSteps = workModeModel.filter((mode) => !["command", "settings", "help"].includes(mode.id));
+const workModeSteps = workModeModel.filter((mode) => !["command", "settings", "help", "runs"].includes(mode.id));
 
 const runTypeLabels: Record<string, string> = {
-  character_birth: "Character Birth",
+  character_birth: "New Face Birth",
   daily_activity: "Daily Activity",
   prompt_generation: "Prompt Generation",
   image_generation: "Image Generation",
   image_analysis: "Image Analysis",
   draft_packaging: "Draft Packaging",
-  feedback_reflection: "Feedback Reflection",
+  feedback_reflection: "Audience Debrief",
   canon_evolution: "Canon Evolution"
 };
 
@@ -631,19 +651,19 @@ function currentStep(run: RunSummary, events: RunEvent[] = []) {
 
 function nextAction(run: RunSummary) {
   if (run.status === "failed") {
-    return "Inspect the error, then retry or cancel from a later processor.";
+    return "Failure needs Studio Ops inspection before related agency work continues.";
   }
   if (run.status === "needs_review") {
-    return "Review the run events and decide whether to continue in the next workflow phase.";
+    return "This production log is parked at a review gate; make the director decision from Review Desk.";
   }
   if (run.status === "queued") {
-    return "Run is queued. Process the next local run when ready.";
+    return "This production job is queued in the local runner.";
   }
   if (run.status === "running" || run.status === "waiting_for_provider") {
-    return "Watch the timeline for provider or queue updates.";
+    return "Watch engine and event entries for the next state change.";
   }
   if (run.status === "completed") {
-    return "Use artifacts and decisions as source material for the next workflow.";
+    return "Machine work completed; use the relevant agency screen for the next director action.";
   }
   return "No action required.";
 }
@@ -687,6 +707,12 @@ export function readAssetRouteState(search?: string) {
 
 export function readDraftRouteState(search?: string) {
   return { status: searchParamsFrom(search).get("status") ?? "" };
+}
+
+export function readReviewRouteState(search?: string) {
+  const type = searchParamsFrom(search).get("type") ?? "all";
+  const allowedTypes: Array<ReviewDecisionType | "all"> = ["all", "portfolio_candidate", "social_package", "career_direction", "studio_attention"];
+  return { type: allowedTypes.includes(type as ReviewDecisionType | "all") ? (type as ReviewDecisionType | "all") : "all" };
 }
 
 export function readCalendarRouteState(search?: string) {
@@ -754,7 +780,7 @@ function useAppData() {
         }
       } catch (caught) {
         if (active) {
-          setError(caught instanceof Error ? caught.message : "Unable to load local machine state.");
+          setError(caught instanceof Error ? caught.message : "Unable to load agency desk.");
           setLoading(false);
         }
       } finally {
@@ -795,9 +821,24 @@ function assetStatusLabel(status: string) {
   return statusLabel(status);
 }
 
+const rawIdTextPattern = /\b(?:asset|run|draft|prompt_recipe|feedback|reflection|proposal|activity|brief|char)_[a-z0-9-]+\b/gi;
+
+export function safeAssetAltText(altText: string | null | undefined, fallback: string) {
+  const source = altText?.trim();
+  if (!source) return fallback;
+  const stripped = source
+    .replace(rawIdTextPattern, "")
+    .replace(/\s+/g, " ")
+    .replace(/\s+([.,;:!?])/g, "$1")
+    .replace(/\bfor\s*[.]?$/i, "")
+    .trim();
+  if (!stripped || /^mock alt text\b/i.test(stripped)) return fallback;
+  return stripped;
+}
+
 function remapLegacyModePath(path: string) {
   if (path === "/characters" || path.startsWith("/characters?")) return path.replace(/^\/characters/, "/talent");
-  if (path === "/prompt-studio" || path.startsWith("/prompt-studio?")) return path.replace(/^\/prompt-studio/, "/create");
+  if (path === "/prompt-studio" || path.startsWith("/prompt-studio?")) return path;
   if (path === "/assets" || path.startsWith("/assets?")) return path.replace(/^\/assets/, "/library");
   if (path === "/drafts" || path.startsWith("/drafts?")) return path.replace(/^\/drafts/, "/review");
   if (path === "/feedback" || path.startsWith("/feedback?")) return path.replace(/^\/feedback/, "/insights");
@@ -806,14 +847,15 @@ function remapLegacyModePath(path: string) {
 
 function workModeActive(path: string, modeId: WorkModeId) {
   if (modeId === "command") return path === "/";
-  if (modeId === "create") return path === "/create" || path === "/prompt-studio";
+  if (modeId === "create") return path === "/create";
+  if (modeId === "bookings") return path === "/prompt-studio";
   if (modeId === "runs") return path === "/runs" || path.startsWith("/runs/");
   if (modeId === "review") return path === "/review" || path === "/drafts";
   if (modeId === "calendar") return path === "/calendar";
   if (modeId === "library") return path === "/library" || path === "/assets";
   if (modeId === "talent") return path === "/talent" || path.startsWith("/characters");
   if (modeId === "insights") return path === "/insights" || path === "/feedback";
-  if (modeId === "settings") return path === "/settings";
+  if (modeId === "settings") return path === "/settings" || path === "/runs" || path.startsWith("/runs/");
   if (modeId === "help") return path === "/help";
   return false;
 }
@@ -822,6 +864,7 @@ function stageSummaryForMode(data: AppData, modeId: WorkModeId) {
   const stageIdByMode: Partial<Record<WorkModeId, WorkflowStageId>> = {
     command: "heartbeat",
     create: "birth",
+    bookings: "production",
     review: "review",
     calendar: "publishing",
     library: "production",
@@ -901,6 +944,1341 @@ function reviewItemLabel(run: RunSummary) {
   return title;
 }
 
+interface DirectorDeskItem {
+  id: string;
+  title: string;
+  detail: string;
+  path: string;
+  actionLabel: string;
+  count?: number;
+  priority?: number;
+}
+
+interface DirectorDeskModel {
+  todayDecisions: DirectorDeskItem[];
+  starWatch: DirectorDeskItem[];
+  todaysBookings: DirectorDeskItem[];
+  audienceSignals: DirectorDeskItem[];
+  publishingFollowUp: DirectorDeskItem[];
+  primaryAction: {
+    label: string;
+    path: string;
+  };
+  studioOpsHealth: {
+    summary: string;
+    detail: string;
+    apiStatus: string;
+    engineStatus: string;
+    schedulerState: string;
+    activeProductions: number;
+    failedProductions: number;
+  };
+}
+
+type TalentStageId = "star_talent" | "core_talent" | "rising_talent" | "development" | "new_face" | "at_risk" | "paused_retired";
+type AgencyPriority = "push" | "develop" | "test" | "pause" | "retire";
+
+interface TalentCareerSummary {
+  talentId: string;
+  displayName: string;
+  stage: TalentStageId;
+  agencyPriority: AgencyPriority;
+  shortPositioning: string;
+  bestPlatform: string;
+  momentum: string;
+  identityStability: string;
+  developmentRisk: "low" | "medium" | "high" | "unknown";
+  nextRecommendedMove: string;
+  pendingDecisionCount: number;
+  latestAudienceSignal: string;
+  updatedAt: string;
+}
+
+type AudienceResultId = "strong" | "promising" | "mixed" | "weak" | "unknown";
+
+interface AudienceDebriefModel {
+  id: string;
+  feedbackId: string;
+  talentId: string;
+  talentName: string;
+  platform: string;
+  result: {
+    id: AudienceResultId;
+    label: string;
+    detail: string;
+  };
+  summary: string;
+  whatWorked: string[];
+  whatFailed: string[];
+  commentThemes: string[];
+  meaningForTalent: string;
+  recommendedNextTest: string;
+  careerDirection: {
+    label: string;
+    body: string;
+    rationale: string;
+    proposalId?: string;
+    kind?: string;
+    status?: string;
+    actionLabel?: string;
+  };
+  pendingProposals: IdentityProposal[];
+  metrics: {
+    impressions: number;
+    reach: number;
+    engagement: number;
+    engagementRate: number | null;
+    engagementRateLabel: string;
+    likes: number;
+    comments: number;
+    shares: number;
+    saves: number;
+    profileVisits: number;
+    followsGained: number;
+  };
+  createdAt: string | null;
+  technicalSource: {
+    publishingEventId?: string | null;
+    draftId?: string | null;
+    reflectionId?: string | null;
+    runId?: string | null;
+  };
+  technicalAudit: unknown;
+}
+
+type StrategyLaneId = "star_talent" | "core_talent" | "rising_talent" | "development_bets" | "at_risk" | "paused_retired";
+
+interface StrategyBoardTalent {
+  talentId: string;
+  displayName: string;
+  lane: StrategyLaneId;
+  agencyPriority: AgencyPriority;
+  momentum: string;
+  audiencePull: string;
+  identityStrength: string;
+  platformFit: string;
+  developmentRisk: string;
+  recommendedInvestment: string;
+  nextMove: string;
+  feedbackCount: number;
+  pendingCareerDirections: number;
+  latestSignal: string;
+  technicalAudit: unknown;
+}
+
+interface StrategyBoardModel {
+  summary: {
+    representedTalent: number;
+    pushCount: number;
+    developmentCount: number;
+    riskCount: number;
+  };
+  lanes: Array<{
+    id: StrategyLaneId;
+    label: string;
+    detail: string;
+    talent: StrategyBoardTalent[];
+  }>;
+  technicalAudit: unknown;
+}
+
+interface StudioOpsModel {
+  headline: string;
+  primaryQuestion: string;
+  overviewCards: Array<{ label: string; value: string | number; detail: string }>;
+  tabs: Array<{ id: SettingsView; label: string; value: string | number; detail: string }>;
+  productionLogSummary: {
+    total: number;
+    active: number;
+    review: number;
+    failed: number;
+    latestFailure: RunSummary | null;
+  };
+  providerReadiness: Array<{ label: string; status: string; detail: string }>;
+  technicalAudit: {
+    api: { ok: boolean; service: string; version?: string; dataDir?: string };
+    productionLogIds: string[];
+    workflowIds: string[];
+    promptRecipeIds: string[];
+    assetIds: string[];
+  };
+}
+
+interface NewFaceDossierStep {
+  id: string;
+  label: string;
+  detail: string;
+  status: "ready" | "needs_input" | "review";
+}
+
+interface NewFaceDossier {
+  talentId: string;
+  displayName: string;
+  stageLabel: string;
+  publicPromise: string;
+  marketOpportunity: string;
+  identitySeed: string;
+  visualDirection: string;
+  voiceInteriority: string;
+  bestInitialPlatform: string;
+  platformFit: string;
+  developmentRisk: string;
+  recommendedFirstBooking: string;
+  directorDecision: string;
+  latestBirthRun: RunSummary | null;
+  productionLogPath: string | null;
+  steps: NewFaceDossierStep[];
+}
+
+type BookingStatus = "idea" | "brief_ready" | "treatment_ready" | "in_production" | "ready_for_review" | "completed" | "cancelled";
+
+interface BookingDeskModel {
+  id: string;
+  talentId: string;
+  talentName: string;
+  platform: string;
+  title: string;
+  careerGoal: string;
+  bookingIdea: string;
+  shootBriefSummary: string;
+  creativeTreatmentSummary: string;
+  audienceHypothesis: string;
+  status: BookingStatus;
+  primaryActionLabel: string;
+  nextStep: string;
+  productionPath: string;
+  technicalSource: {
+    activityCandidateId?: string;
+    contentBriefId?: string;
+    promptRecipeId?: string;
+    runId?: string | null;
+  };
+}
+
+type ReviewDecisionType = "portfolio_candidate" | "social_package" | "career_direction" | "studio_attention";
+
+interface ReviewDecisionPacket {
+  id: string;
+  type: ReviewDecisionType;
+  title: string;
+  talentId: string | null;
+  talentName: string;
+  statusLabel: string;
+  summary: string;
+  recommendation: string;
+  why: string[];
+  risk: string;
+  consequence: string;
+  primaryActionLabel: string;
+  secondaryActionLabels: string[];
+  previewImageAssetId?: string | null;
+  previewAlt: string;
+  createdAt: string | null;
+  priority: number;
+  technicalSource: {
+    assetId?: string | null;
+    draftId?: string | null;
+    proposalId?: string | null;
+    runId?: string | null;
+  };
+  technicalAudit: unknown;
+}
+
+const rosterLaneModel: Array<{ id: TalentStageId; label: string; detail: string }> = [
+  { id: "star_talent", label: "Star Talent", detail: "earned repeated public pull" },
+  { id: "core_talent", label: "Core Talent", detail: "reliable agency performers" },
+  { id: "rising_talent", label: "Rising Talent", detail: "positive signal to push" },
+  { id: "development", label: "Development", detail: "needs shaping or testing" },
+  { id: "new_face", label: "New Faces", detail: "scouted or newly born" },
+  { id: "at_risk", label: "At Risk", detail: "weak signal or production concern" },
+  { id: "paused_retired", label: "Paused / Retired", detail: "not actively booking" }
+];
+
+function countFromWorkflowDetail(stage: WorkflowStageSummary | undefined, phrase: string) {
+  if (!stage) return 0;
+  const pattern = phrase
+    .trim()
+    .replace(/[.*+?^${}()|[\]\\]/g, "\\$&")
+    .replace(/\\ /g, "\\s+");
+  const match = stage.detail.match(new RegExp(`(\\d+)\\s+${pattern}s?\\b`, "i"));
+  return match ? Number(match[1]) : 0;
+}
+
+function stagePath(stage: WorkflowStageSummary | undefined, fallback: string) {
+  return remapLegacyModePath(stage?.primaryActionPath ?? fallback);
+}
+
+function productionDeskStatus(run: RunSummary) {
+  if (run.status === "waiting_for_provider") return "Waiting on production results";
+  if (run.status === "running") return "In production";
+  if (run.status === "queued") return "Queued for production";
+  return statusLabel(run.status);
+}
+
+function productionPathForRun(run: RunSummary) {
+  if (run.type === "draft_packaging") return "/review";
+  if (run.type === "image_generation" || run.type === "image_analysis") return "/library";
+  if (run.type === "feedback_reflection" || run.type === "canon_evolution") return "/insights";
+  if (run.type === "character_birth") return "/create";
+  return "/prompt-studio";
+}
+
+function bookingTitleForRun(run: RunSummary) {
+  if (run.type === "daily_activity") return "Daily booking in production";
+  if (run.type === "prompt_generation") return "Creative treatment being prepared";
+  if (run.type === "image_generation") return "Portfolio production underway";
+  if (run.type === "image_analysis") return "Portfolio quality review underway";
+  if (run.type === "draft_packaging") return "Social package being assembled";
+  return humanRunTitle(run);
+}
+
+function buildCharacterRunMap(runs: RunSummary[]) {
+  return runs.reduce<Map<string, RunSummary[]>>((map, run) => {
+    if (!run.character_id) return map;
+    const nextRuns = map.get(run.character_id) ?? [];
+    nextRuns.push(run);
+    map.set(run.character_id, nextRuns);
+    return map;
+  }, new Map<string, RunSummary[]>());
+}
+
+function hasCharacterDetail(character: CharacterSummary | CharacterDetail): character is CharacterDetail {
+  return "recentRuns" in character;
+}
+
+function talentStageLabel(stage: TalentStageId) {
+  return rosterLaneModel.find((lane) => lane.id === stage)?.label ?? stage.replaceAll("_", " ");
+}
+
+function agencyPriorityLabel(priority: AgencyPriority) {
+  if (priority === "push") return "Push";
+  if (priority === "develop") return "Develop";
+  if (priority === "test") return "Test";
+  if (priority === "pause") return "Pause";
+  return "Retire";
+}
+
+function visibleSummary(value: string | null | undefined) {
+  const normalized = (value ?? "").replace(/\s+/g, " ").trim();
+  return normalized || "Positioning is still being shaped.";
+}
+
+function judgmentText(character: CharacterSummary | CharacterDetail) {
+  if (!hasCharacterDetail(character)) return "";
+  return character.feedback.map((item) => [item.operator_judgment, item.qualitative_notes, item.top_comments].filter(Boolean).join(" ")).join(" ");
+}
+
+function hasPositiveAudienceSignal(character: CharacterSummary | CharacterDetail) {
+  return /\b(strong|positive|promising|worth repeating|on-character|consistent|liked|love|resonated|excellent|repeat)\b/.test(judgmentText(character).toLowerCase());
+}
+
+function hasWeakAudienceSignal(character: CharacterSummary | CharacterDetail) {
+  return /\b(weak|negative|off-character|inconsistent|drift|reject|poor|pause|failed|not worth)\b/.test(judgmentText(character).toLowerCase());
+}
+
+function bestPlatformForTalent(character: CharacterSummary | CharacterDetail) {
+  if (!hasCharacterDetail(character)) return "Not proven";
+  const feedbackPlatform = character.feedback[0]?.platform;
+  const personaPlatform = character.platformPersonas[0]?.platform;
+  return platformLabel(feedbackPlatform ?? personaPlatform ?? null);
+}
+
+function latestAudienceSignal(character: CharacterSummary | CharacterDetail) {
+  if (!hasCharacterDetail(character) || character.feedback.length === 0) {
+    return "No audience response logged yet";
+  }
+  const latest = character.feedback[0];
+  if (latest.operator_judgment) return compactInlineText(latest.operator_judgment, 110);
+  if (latest.qualitative_notes) return compactInlineText(latest.qualitative_notes, 110);
+  return `${platformLabel(latest.platform)} response logged`;
+}
+
+function firstFilled(values: Array<string | null | undefined>, fallback: string) {
+  return values.map((value) => value?.trim()).find(Boolean) ?? fallback;
+}
+
+function labeledLines(items: Array<[string, string | null | undefined]>) {
+  return items
+    .map(([label, value]) => [label, value?.trim()] as const)
+    .filter(([, value]) => Boolean(value))
+    .map(([label, value]) => `${label}: ${value}`)
+    .join("\n");
+}
+
+function hasSavedIdentityComponent(character: CharacterSummary | CharacterDetail, key: "appearance" | "voice" | "platform") {
+  if (!hasCharacterDetail(character)) return false;
+  if (key === "appearance") return character.appearanceProfiles.length > 0;
+  if (key === "voice") return character.voiceGuides.length > 0;
+  return character.platformPersonas.length > 0;
+}
+
+export function buildNewFaceDossier(character: CharacterSummary | CharacterDetail, allRuns: RunSummary[] = []): NewFaceDossier {
+  const providedRuns = allRuns.filter((run) => run.character_id === character.id);
+  const detailRuns = hasCharacterDetail(character) ? character.recentRuns : [];
+  const providedRunIds = new Set(providedRuns.map((run) => run.id));
+  const candidateRuns = [...providedRuns, ...detailRuns.filter((run) => !providedRunIds.has(run.id))];
+  const birthRuns = candidateRuns
+    .filter((run) => run.type === "character_birth")
+    .slice()
+    .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime());
+  const latestBirthRun = birthRuns[0] ?? null;
+  const career = buildTalentCareerSummary(character, candidateRuns);
+  const appearance = hasCharacterDetail(character) ? character.appearanceProfiles[0]?.body : null;
+  const voice = hasCharacterDetail(character) ? character.voiceGuides[0]?.body : null;
+  const activeConstitution = hasCharacterDetail(character)
+    ? character.constitutions.find((item) => item.is_active === 1)?.body ?? character.constitutions[0]?.body
+    : null;
+  const personaPlatforms = hasCharacterDetail(character) ? character.platformPersonas.map((persona) => platformLabel(persona.platform)) : [];
+  const approvedReferenceCount = hasCharacterDetail(character) ? character.referenceImages.filter((image) => image.status === "approved").length : 0;
+  const status = character.status.toLowerCase();
+  const publicPromise = firstFilled([character.summary, activeConstitution], "Public promise still needs a sharper market reason.");
+  const marketOpportunity = visibleSummary(character.summary);
+  const visualDirection = firstFilled([appearance], "Look direction needs reference, style language, and drift constraints.");
+  const voiceInteriority = firstFilled([voice], "Voice and inner life need emotional tone, values, and public/private contrast.");
+  const bestInitialPlatform = personaPlatforms[0] ?? career.bestPlatform;
+  const platformFit =
+    personaPlatforms.length > 0
+      ? personaPlatforms.join(", ")
+      : bestInitialPlatform === "Not proven"
+        ? "Primary platform still needs selection."
+        : bestInitialPlatform;
+  const developmentRisk =
+    latestBirthRun?.status === "failed"
+      ? "High: birth output needs Studio Ops follow-up."
+      : !hasSavedIdentityComponent(character, "appearance") || !hasSavedIdentityComponent(character, "voice")
+        ? "Medium: visual direction or voice is still thin."
+        : approvedReferenceCount === 0
+          ? "Medium: no approved reference has been locked."
+          : "Low: identity inputs are ready for first booking.";
+  const recommendedFirstBooking =
+    bestInitialPlatform && bestInitialPlatform !== "Not proven" && bestInitialPlatform !== "Primary platform still needs selection."
+      ? `First portfolio test for ${bestInitialPlatform}`
+      : "First portfolio test to prove platform fit";
+  const directorDecision = status.includes("approved")
+    ? "Approved for development"
+    : status.includes("rejected")
+      ? "Concept rejected"
+      : latestBirthRun?.status === "needs_review"
+        ? "Director decision needed"
+        : status.includes("revision")
+          ? "Revise identity"
+          : "Needs scouting approval";
+
+  return {
+    talentId: character.id,
+    displayName: career.displayName,
+    stageLabel: career.stage === "new_face" ? "New Face" : talentStageLabel(career.stage),
+    publicPromise: compactInlineText(publicPromise, 180),
+    marketOpportunity: compactInlineText(marketOpportunity, 180),
+    identitySeed: compactInlineText(activeConstitution ?? marketOpportunity, 180),
+    visualDirection: compactInlineText(visualDirection, 180),
+    voiceInteriority: compactInlineText(voiceInteriority, 180),
+    bestInitialPlatform,
+    platformFit,
+    developmentRisk,
+    recommendedFirstBooking,
+    directorDecision,
+    latestBirthRun,
+    productionLogPath: latestBirthRun ? `/runs/${latestBirthRun.id}` : null,
+    steps: [
+      { id: "market", label: "Market Opportunity", detail: marketOpportunity, status: character.summary ? "ready" : "needs_input" },
+      { id: "seed", label: "Identity Seed", detail: activeConstitution ? "Seed saved to identity bible." : "Seed needs a saved identity pass.", status: activeConstitution ? "ready" : "needs_input" },
+      { id: "look", label: "Look Direction", detail: visualDirection, status: hasSavedIdentityComponent(character, "appearance") ? "ready" : "needs_input" },
+      { id: "voice", label: "Voice and Inner Life", detail: voiceInteriority, status: hasSavedIdentityComponent(character, "voice") ? "ready" : "needs_input" },
+      { id: "platform", label: "Platform Fit", detail: platformFit, status: hasSavedIdentityComponent(character, "platform") ? "ready" : "needs_input" },
+      { id: "portfolio", label: "First Portfolio Test", detail: recommendedFirstBooking, status: latestBirthRun ? "review" : "needs_input" },
+      { id: "dossier", label: "New Face Dossier", detail: directorDecision, status: latestBirthRun?.status === "needs_review" ? "review" : "ready" }
+    ]
+  };
+}
+
+function treatmentScene(recipe: PromptRecipe | null) {
+  if (!recipe?.final_prompt) return "";
+  return recipe.final_prompt.match(/SCENE\s*\n([\s\S]*?)\n\nPLATFORM/)?.[1]?.trim() ?? "";
+}
+
+function briefAudienceHypothesis(brief: ContentBrief | null | undefined) {
+  const desiredOutputs = brief?.desired_outputs ?? "";
+  const match = desiredOutputs.match(/Audience hypothesis:\s*([\s\S]*?)(?:\n|$)/i);
+  return match?.[1]?.trim() ?? "";
+}
+
+function deriveAudienceHypothesis(
+  character: CharacterSummary,
+  candidate: ActivityCandidate | null | undefined,
+  brief: ContentBrief | null | undefined,
+  platform: string
+) {
+  const savedHypothesis = briefAudienceHypothesis(brief);
+  if (savedHypothesis) return savedHypothesis;
+  const displayName = displayModelName(character.name);
+  const pillar = brief?.content_pillar || candidate?.activity_type || "process";
+  const hook = brief?.visual_direction || candidate?.visual_motif || candidate?.title || "the next creative assignment";
+  const targetPlatform = brief?.platform_targets || candidate?.platform_fit?.split(",")[0]?.trim() || platform;
+  return `This booking tests whether ${displayName}'s audience responds to ${pillar} content built around ${hook} on ${targetPlatform}.`;
+}
+
+export function buildBookingDeskModel({
+  character,
+  candidate,
+  brief,
+  recipe,
+  platform
+}: {
+  character: CharacterSummary;
+  candidate?: ActivityCandidate | null;
+  brief?: ContentBrief | null;
+  recipe?: PromptRecipe | null;
+  platform: string;
+}): BookingDeskModel {
+  const talentName = displayModelName(character.name);
+  const targetPlatform = brief?.platform_targets || candidate?.platform_fit?.split(",")[0]?.trim() || platform;
+  const bookingIdea = candidate
+    ? `${candidate.title}: ${compactInlineText(candidate.body, 140)}`
+    : "No booking idea selected yet.";
+  const shootBriefSummary = brief
+    ? compactInlineText([brief.goal, brief.visual_direction, brief.caption_angle].filter(Boolean).join(" "), 180)
+    : "Choose a booking idea and create a shoot brief.";
+  const creativeTreatmentSummary = recipe
+    ? compactInlineText(treatmentScene(recipe) || "Identity, look, shoot brief, and production settings are assembled.", 180)
+    : "Prepare a creative treatment after the shoot brief.";
+  const status: BookingStatus = recipe ? "treatment_ready" : brief ? "brief_ready" : candidate ? "idea" : "idea";
+  const primaryActionLabel = recipe ? "Start Production" : brief ? "Prepare Creative Treatment" : candidate ? "Create Shoot Brief" : "Propose Booking Ideas";
+  const nextStep = recipe
+    ? "Start production and send the candidate shot into Portfolio review."
+    : brief
+      ? "Prepare the creative treatment from the selected shoot brief."
+      : candidate
+        ? "Turn the selected booking idea into a shoot brief."
+        : "Propose booking ideas for the selected talent.";
+
+  return {
+    id: recipe?.id ?? brief?.id ?? candidate?.id ?? `booking_${character.id}`,
+    talentId: character.id,
+    talentName,
+    platform: targetPlatform,
+    title: candidate?.title ?? "Next booking",
+    careerGoal: brief?.goal ?? `Book next work for ${talentName}.`,
+    bookingIdea,
+    shootBriefSummary,
+    creativeTreatmentSummary,
+    audienceHypothesis: deriveAudienceHypothesis(character, candidate, brief, targetPlatform),
+    status,
+    primaryActionLabel,
+    nextStep,
+    productionPath: `/assets?characterId=${encodeURIComponent(character.id)}&status=raw_generation`,
+    technicalSource: {
+      activityCandidateId: candidate?.id,
+      contentBriefId: brief?.id,
+      promptRecipeId: recipe?.id,
+      runId: recipe?.run_id ?? undefined
+    }
+  };
+}
+
+function careerEventTitle(run: RunSummary) {
+  if (run.type === "character_birth") return "Born as New Face";
+  if (run.type === "daily_activity") return "Booked daily work";
+  if (run.type === "prompt_generation") return "Creative treatment prepared";
+  if (run.type === "image_generation") return "Production created candidate shots";
+  if (run.type === "image_analysis") return "Portfolio quality review completed";
+  if (run.type === "draft_packaging") return "Social package prepared";
+  if (run.type === "feedback_reflection") return "Audience debrief completed";
+  if (run.type === "canon_evolution") return "Career story updated";
+  return runTypeLabel(run.type);
+}
+
+function careerEventOutcome(run: RunSummary) {
+  if (run.status === "needs_review") return "Director decision needed";
+  if (run.status === "failed") return "Studio Ops follow-up needed";
+  if (run.status === "completed") return "Completed";
+  if (["queued", "running", "waiting_for_provider"].includes(run.status)) return productionDeskStatus(run);
+  return statusLabel(run.status);
+}
+
+export function buildTalentCareerSummary(character: CharacterSummary | CharacterDetail, allRuns: RunSummary[] = []): TalentCareerSummary {
+  const runs = hasCharacterDetail(character) ? character.recentRuns : allRuns.filter((run) => run.character_id === character.id);
+  const status = character.status.toLowerCase();
+  const pendingDecisionCount = hasCharacterDetail(character)
+    ? character.identityProposals.filter((proposal) => proposal.status === "proposed").length
+    : runs.filter((run) => run.status === "needs_review").length;
+  const hasBirthRun = runs.some((run) => run.type === "character_birth");
+  const hasWorkingActivity = runs.some((run) => ["daily_activity", "image_generation", "image_analysis", "draft_packaging"].includes(run.type));
+  const hasFailedProduction = runs.some((run) => run.status === "failed");
+  const detailHasMinimalSetup = hasCharacterDetail(character)
+    ? character.constitutions.length === 0 || character.appearanceProfiles.length === 0 || character.voiceGuides.length === 0
+    : !hasBirthRun;
+  const positiveSignal = hasPositiveAudienceSignal(character);
+  const weakSignal = hasWeakAudienceSignal(character);
+  const feedbackCount = hasCharacterDetail(character) ? character.feedback.length : 0;
+  const reflectionCount = hasCharacterDetail(character) ? character.reflections.length : 0;
+  let stage: TalentStageId = "development";
+
+  if (status.includes("retired") || status.includes("paused") || status.includes("archived")) {
+    stage = "paused_retired";
+  } else if (weakSignal || hasFailedProduction || status.includes("rejected")) {
+    stage = "at_risk";
+  } else if (positiveSignal && feedbackCount >= 3 && reflectionCount >= 1) {
+    stage = "star_talent";
+  } else if ((positiveSignal && feedbackCount >= 2) || status.includes("reflection_complete")) {
+    stage = "core_talent";
+  } else if (positiveSignal || status.includes("published") || status.includes("feedback")) {
+    stage = "rising_talent";
+  } else if (pendingDecisionCount > 0 || hasWorkingActivity || status.includes("approved") || status.includes("draft")) {
+    stage = "development";
+  } else if (detailHasMinimalSetup) {
+    stage = "new_face";
+  }
+
+  const agencyPriority: AgencyPriority =
+    stage === "star_talent" || stage === "core_talent" || stage === "rising_talent"
+      ? "push"
+      : stage === "paused_retired"
+        ? "pause"
+        : stage === "at_risk"
+          ? "test"
+          : "develop";
+  const developmentRisk: TalentCareerSummary["developmentRisk"] =
+    stage === "at_risk" ? "high" : detailHasMinimalSetup ? "medium" : stage === "paused_retired" ? "unknown" : "low";
+  const identityStability =
+    hasCharacterDetail(character)
+      ? character.constitutions.length && character.appearanceProfiles.length && character.voiceGuides.length
+        ? "Stable enough to book"
+        : "Needs identity work"
+      : hasBirthRun
+        ? "Birth activity exists"
+        : "Needs birth/development";
+  const momentum =
+    stage === "star_talent"
+      ? "Repeated public pull"
+      : stage === "core_talent"
+        ? "Reliable audience signal"
+        : stage === "rising_talent"
+          ? "Promising audience signal"
+          : stage === "at_risk"
+            ? "Needs correction"
+            : hasWorkingActivity
+              ? "Work in development"
+              : "Not enough signal";
+  const nextRecommendedMove =
+    pendingDecisionCount > 0
+      ? "Review Career Direction"
+      : stage === "new_face"
+        ? "Approve New Face"
+        : stage === "at_risk"
+          ? "Review Development Risk"
+          : stage === "paused_retired"
+            ? "Reassess Agency Priority"
+            : stage === "development"
+              ? "Book Next Test"
+              : "Book Next Work";
+
+  return {
+    talentId: character.id,
+    displayName: displayModelName(character.name),
+    stage,
+    agencyPriority,
+    shortPositioning: visibleSummary(character.summary),
+    bestPlatform: bestPlatformForTalent(character),
+    momentum,
+    identityStability,
+    developmentRisk,
+    nextRecommendedMove,
+    pendingDecisionCount,
+    latestAudienceSignal: latestAudienceSignal(character),
+    updatedAt: character.updated_at
+  };
+}
+
+export function buildRosterLanes(characters: CharacterSummary[], runs: RunSummary[]) {
+  const summaries = characters.map((character) => buildTalentCareerSummary(character, runs));
+  return rosterLaneModel.map((lane) => ({
+    ...lane,
+    talent: summaries.filter((summary) => summary.stage === lane.id)
+  }));
+}
+
+const audienceResultCopy: Record<AudienceResultId, { label: string; detail: string }> = {
+  strong: { label: "Strong", detail: "Public response is clear enough to repeat and invest in." },
+  promising: { label: "Promising", detail: "The signal is positive but needs one more confirming test." },
+  mixed: { label: "Mixed", detail: "The response has usable learning and unresolved risk." },
+  weak: { label: "Weak", detail: "The signal needs correction before more agency attention." },
+  unknown: { label: "Unknown", detail: "There is not enough public response to make a career call." }
+};
+
+const strategyLaneModel: Array<{ id: StrategyLaneId; label: string; detail: string }> = [
+  { id: "star_talent", label: "Star Talent", detail: "repeat public pull and highest agency attention" },
+  { id: "core_talent", label: "Core Talent", detail: "reliable performers worth steady booking" },
+  { id: "rising_talent", label: "Rising Talent", detail: "fresh signal that deserves a push" },
+  { id: "development_bets", label: "Development Bets", detail: "identity, platform, or first-audience tests still forming" },
+  { id: "at_risk", label: "At Risk", detail: "weak response, identity drift, or production concern" },
+  { id: "paused_retired", label: "Paused / Retired", detail: "not actively receiving agency attention" }
+];
+
+function uniqueCompact(items: Array<string | null | undefined>, fallback: string, maxLength = 150) {
+  const seen = new Set<string>();
+  const compacted = items
+    .map((item) => compactInlineText(item, maxLength))
+    .map((item) => item.replace(/\s+/g, " ").trim())
+    .filter(Boolean)
+    .filter((item) => {
+      const key = item.toLowerCase();
+      if (seen.has(key)) return false;
+      seen.add(key);
+      return true;
+    });
+  return compacted.length ? compacted : [fallback];
+}
+
+function feedbackEngagement(feedback: SocialFeedback) {
+  return feedback.likes + feedback.comments + feedback.shares + feedback.saves;
+}
+
+function feedbackEngagementRate(feedback: SocialFeedback) {
+  if (!feedback.reach) return null;
+  return Math.round((feedbackEngagement(feedback) / feedback.reach) * 1000) / 10;
+}
+
+function audienceJudgmentCorpus(feedback: SocialFeedback) {
+  return [feedback.operator_judgment, feedback.qualitative_notes, feedback.top_comments].filter(Boolean).join(" ").toLowerCase();
+}
+
+function audienceResultForFeedback(feedback: SocialFeedback): AudienceResultId {
+  const corpus = audienceJudgmentCorpus(feedback);
+  const positive = /\b(strong|positive|promising|worth repeating|on-character|consistent|liked|love|resonated|excellent|repeat|clear|useful)\b/.test(corpus);
+  const negative = /\b(weak|negative|off-character|inconsistent|drift|reject|poor|pause|failed|not worth|unclear|confusing)\b/.test(corpus);
+  const rate = feedbackEngagementRate(feedback);
+  const hasPublicData = feedback.impressions + feedback.reach + feedback.likes + feedback.comments + feedback.shares + feedback.saves + feedback.follows_gained > 0;
+  if (!hasPublicData && !corpus) return "unknown";
+  if (positive && negative) return "mixed";
+  if (negative && (rate === null || rate < 4 || corpus.includes("off-character") || corpus.includes("drift"))) return "weak";
+  if ((rate !== null && rate >= 8) || feedback.follows_gained >= 4 || feedback.saves >= 18) return "strong";
+  if (positive && (feedback.follows_gained > 0 || feedback.saves > 0 || feedback.comments > 0)) return "promising";
+  if (positive || (rate !== null && rate >= 3) || feedback.follows_gained > 0 || feedback.saves > 0) return "promising";
+  if (negative || (rate !== null && rate < 1 && feedback.reach > 0)) return "weak";
+  if (feedbackEngagement(feedback) > 0) return "mixed";
+  return "unknown";
+}
+
+function isObjectRecord(value: unknown): value is Record<string, unknown> {
+  return Boolean(value) && typeof value === "object" && !Array.isArray(value);
+}
+
+function reflectionPayload(reflection: ReflectionEntry | null | undefined) {
+  return isObjectRecord(reflection?.reflection) ? reflection.reflection : {};
+}
+
+function reflectionField(reflection: ReflectionEntry | null | undefined, key: string, label: string) {
+  const payload = reflectionPayload(reflection);
+  const value = payload[key];
+  if (typeof value === "string" && value.trim()) return value.trim();
+  const line = reflection?.body
+    ?.split("\n")
+    .find((entry) => entry.toLowerCase().startsWith(`${label.toLowerCase()}:`));
+  return line?.replace(new RegExp(`^${label}:\\s*`, "i"), "").trim() ?? "";
+}
+
+function matchingReflection(character: CharacterDetail, feedback: SocialFeedback) {
+  return (
+    character.reflections.find((reflection) => reflection.social_feedback_id === feedback.id) ??
+    character.reflections.find((reflection) => reflection.draft_id === feedback.draft_id) ??
+    null
+  );
+}
+
+function proposalActionLabel(proposal: IdentityProposal) {
+  if (proposal.kind === "memory") return "Approve Memory Update";
+  if (proposal.kind === "canon") return "Add to Canon";
+  if (proposal.kind === "constitution_patch") return "Approve Identity Bible Update";
+  return "Approve Career Update";
+}
+
+function proposalDirectionLabel(proposal: IdentityProposal | null) {
+  if (!proposal) return "No career direction proposed";
+  if (proposal.kind === "memory") return "Memory update proposed";
+  if (proposal.kind === "canon") return "Canon update proposed";
+  if (proposal.kind === "constitution_patch") return "Identity Bible update proposed";
+  return `${proposalKindLabel(proposal.kind)} proposed`;
+}
+
+function commentThemeLines(feedback: SocialFeedback) {
+  const topComments = (feedback.top_comments ?? "")
+    .split(/\n|;|•/)
+    .map((comment) => comment.replace(/^["'\s-]+|["'\s.]+$/g, "").trim())
+    .filter(Boolean)
+    .slice(0, 3);
+  const qualitative = feedback.qualitative_notes ? [feedback.qualitative_notes] : [];
+  return uniqueCompact([...topComments, ...qualitative], "No comment theme recorded yet.", 120);
+}
+
+function buildAudienceDebrief(character: CharacterDetail, feedback: SocialFeedback): AudienceDebriefModel {
+  const talentName = displayModelName(character.name);
+  const reflection = matchingReflection(character, feedback);
+  const resultId = audienceResultForFeedback(feedback);
+  const result = audienceResultCopy[resultId];
+  const pendingProposals = character.identityProposals.filter((proposal) =>
+    proposal.status === "proposed" &&
+    (proposal.source_reflection_id === reflection?.id || (reflection?.run_id && proposal.run_id === reflection.run_id))
+  );
+  const primaryProposal = pendingProposals[0] ?? character.identityProposals.find((proposal) => proposal.source_reflection_id === reflection?.id) ?? null;
+  const rate = feedbackEngagementRate(feedback);
+  const engagement = feedbackEngagement(feedback);
+  const workedFromReflection = reflectionField(reflection, "whatWorked", "Worked");
+  const repeatFromReflection = reflectionField(reflection, "repeat", "Repeat");
+  const offCharacter = reflectionField(reflection, "offCharacter", "Off-character");
+  const avoid = reflectionField(reflection, "avoid", "Avoid");
+  const nextActivity = reflectionField(reflection, "suggestedNextActivity", "Next");
+  const proposedMemory = reflectionField(reflection, "proposedMemory", "Memory");
+  const proposedCanon = reflectionField(reflection, "proposedCanon", "Canon");
+  const hasLowDiscussion = feedback.reach > 0 && feedback.comments === 0;
+  const hasLowSaveSignal = feedback.reach > 0 && feedback.saves === 0;
+  const metricSummary = rate === null ? `${engagement} total engagements` : `${engagement} engagements at ${rate.toFixed(1)}%`;
+  const summary = `${result.label} audience response on ${platformLabel(feedback.platform)} for ${talentName}. ${metricSummary}; ${feedback.follows_gained} follows gained.`;
+
+  return {
+    id: `audience:${feedback.id}`,
+    feedbackId: feedback.id,
+    talentId: character.id,
+    talentName,
+    platform: platformLabel(feedback.platform),
+    result: { id: resultId, ...result },
+    summary,
+    whatWorked: uniqueCompact(
+      [
+        workedFromReflection,
+        feedback.saves > 0 ? `${feedback.saves} saves suggest this had repeat or reference value.` : null,
+        feedback.follows_gained > 0 ? `${feedback.follows_gained} follows gained point to audience pull beyond the post.` : null,
+        feedback.comments > 0 ? `${feedback.comments} comments gave the operator usable qualitative signal.` : null,
+        repeatFromReflection,
+        resultId === "strong" ? "The response is strong enough to repeat the premise with small variation." : null
+      ],
+      "The audience response was logged, but the winning element needs a clearer pattern."
+    ),
+    whatFailed: uniqueCompact(
+      [
+        offCharacter && !/^no major off-character signal/i.test(offCharacter) ? offCharacter : null,
+        avoid,
+        hasLowDiscussion ? "Discussion was light, so the next test should ask for a clearer audience reaction." : null,
+        hasLowSaveSignal ? "Save behavior was not proven on this post." : null,
+        resultId === "weak" ? "The response is not strong enough to justify more agency attention without a corrective test." : null
+      ],
+      resultId === "strong" || resultId === "promising" ? "No major failure signal was logged." : "Not enough public data to isolate a failure yet."
+    ),
+    commentThemes: commentThemeLines(feedback),
+    meaningForTalent: compactInlineText(
+      proposedMemory ||
+        feedback.qualitative_notes ||
+        feedback.operator_judgment ||
+        (resultId === "weak"
+          ? `${talentName} needs a narrower follow-up before the agency treats this direction as proven.`
+          : `${talentName} has an audience signal that should guide the next public test.`),
+      220
+    ),
+    recommendedNextTest: compactInlineText(
+      nextActivity ||
+        (feedback.saves > feedback.shares
+          ? "Create a saveable behind-the-scenes ritual."
+          : feedback.comments > 0
+            ? "Repeat the premise with a sharper caption question."
+            : "Run one focused follow-up post before changing identity direction."),
+      180
+    ),
+    careerDirection: {
+      label: proposalDirectionLabel(primaryProposal),
+      body: compactInlineText(primaryProposal?.body ?? proposedCanon ?? proposedMemory ?? "No memory, canon, or Identity Bible update is proposed from this signal yet.", 220),
+      rationale: compactInlineText(primaryProposal?.rationale ?? "Career evolution stays review-gated until the director approves a proposal.", 180),
+      proposalId: primaryProposal?.id,
+      kind: primaryProposal?.kind,
+      status: primaryProposal?.status,
+      actionLabel: primaryProposal ? proposalActionLabel(primaryProposal) : undefined
+    },
+    pendingProposals,
+    metrics: {
+      impressions: feedback.impressions,
+      reach: feedback.reach,
+      engagement,
+      engagementRate: rate,
+      engagementRateLabel: rate === null ? "No reach logged" : `${rate.toFixed(1)}%`,
+      likes: feedback.likes,
+      comments: feedback.comments,
+      shares: feedback.shares,
+      saves: feedback.saves,
+      profileVisits: feedback.profile_visits,
+      followsGained: feedback.follows_gained
+    },
+    createdAt: feedback.created_at ?? feedback.updated_at ?? null,
+    technicalSource: {
+      publishingEventId: feedback.publishing_event_id,
+      draftId: feedback.draft_id,
+      reflectionId: reflection?.id,
+      runId: reflection?.run_id
+    },
+    technicalAudit: {
+      feedback,
+      reflection,
+      proposals: character.identityProposals.filter((proposal) => proposal.source_reflection_id === reflection?.id)
+    }
+  };
+}
+
+export function buildAudienceDebriefModels(characters: CharacterDetail[]) {
+  return characters
+    .flatMap((character) => character.feedback.map((feedback) => buildAudienceDebrief(character, feedback)))
+    .sort((left, right) => new Date(right.createdAt ?? 0).getTime() - new Date(left.createdAt ?? 0).getTime());
+}
+
+function strategyLaneForCareer(career: TalentCareerSummary): StrategyLaneId {
+  if (career.stage === "star_talent") return "star_talent";
+  if (career.stage === "core_talent") return "core_talent";
+  if (career.stage === "rising_talent") return "rising_talent";
+  if (career.stage === "at_risk") return "at_risk";
+  if (career.stage === "paused_retired") return "paused_retired";
+  return "development_bets";
+}
+
+function recommendedInvestmentFor(career: TalentCareerSummary) {
+  if (career.agencyPriority === "push") return "Push next booking";
+  if (career.agencyPriority === "develop") return "Develop before public push";
+  if (career.agencyPriority === "test") return "Run one corrective test";
+  if (career.agencyPriority === "pause") return "Pause active booking";
+  return "Retire or archive";
+}
+
+function audiencePullForCharacter(character: CharacterSummary | CharacterDetail) {
+  if (!hasCharacterDetail(character) || character.feedback.length === 0) return "Unproven";
+  const results = character.feedback.map(audienceResultForFeedback);
+  const strongCount = results.filter((result) => result === "strong").length;
+  const positiveCount = results.filter((result) => result === "strong" || result === "promising").length;
+  const weakCount = results.filter((result) => result === "weak").length;
+  if (strongCount >= 2) return "Repeated public pull";
+  if (positiveCount >= 2) return "Reliable public pull";
+  if (positiveCount === 1) return "Early positive pull";
+  if (weakCount > 0) return "Weak public response";
+  return "Mixed or unproven";
+}
+
+export function buildStrategyBoardModel(characters: Array<CharacterSummary | CharacterDetail>, runs: RunSummary[] = []): StrategyBoardModel {
+  const talent = characters.map((character) => {
+    const career = buildTalentCareerSummary(character, runs);
+    const lane = strategyLaneForCareer(career);
+    const feedbackCount = hasCharacterDetail(character) ? character.feedback.length : 0;
+    const pendingCareerDirections = hasCharacterDetail(character) ? character.identityProposals.filter((proposal) => proposal.status === "proposed").length : career.pendingDecisionCount;
+    return {
+      talentId: character.id,
+      displayName: career.displayName,
+      lane,
+      agencyPriority: career.agencyPriority,
+      momentum: career.momentum,
+      audiencePull: audiencePullForCharacter(character),
+      identityStrength: career.identityStability,
+      platformFit: career.bestPlatform,
+      developmentRisk: career.developmentRisk === "unknown" ? "Unknown" : `${career.developmentRisk[0].toUpperCase()}${career.developmentRisk.slice(1)}`,
+      recommendedInvestment: recommendedInvestmentFor(career),
+      nextMove: career.nextRecommendedMove,
+      feedbackCount,
+      pendingCareerDirections,
+      latestSignal: career.latestAudienceSignal,
+      technicalAudit: {
+        stage: career.stage,
+        priority: career.agencyPriority,
+        feedbackCount,
+        pendingCareerDirections
+      }
+    };
+  });
+  const priorityOrder: Record<AgencyPriority, number> = { push: 0, develop: 1, test: 2, pause: 3, retire: 4 };
+  const sortedTalent = talent.sort((left, right) => {
+    const priorityDelta = priorityOrder[left.agencyPriority] - priorityOrder[right.agencyPriority];
+    if (priorityDelta !== 0) return priorityDelta;
+    return right.feedbackCount - left.feedbackCount;
+  });
+  const lanes = strategyLaneModel.map((lane) => ({
+    ...lane,
+    talent: sortedTalent.filter((item) => item.lane === lane.id)
+  }));
+  return {
+    summary: {
+      representedTalent: talent.length,
+      pushCount: talent.filter((item) => item.agencyPriority === "push").length,
+      developmentCount: talent.filter((item) => item.lane === "development_bets").length,
+      riskCount: talent.filter((item) => item.lane === "at_risk").length
+    },
+    lanes,
+    technicalAudit: {
+      lanes: lanes.map((lane) => ({ id: lane.id, count: lane.talent.length }))
+    }
+  };
+}
+
+export function buildStudioOpsModel({
+  data,
+  settings,
+  automationSettings,
+  automationStatus,
+  workflows,
+  promptRecipes,
+  assets
+}: {
+  data: AppData;
+  settings: ProviderSettings;
+  automationSettings: AutomationSettings;
+  automationStatus: AutomationStatus | null;
+  workflows: ComfyWorkflow[];
+  promptRecipes: PromptRecipe[];
+  assets: ImageAsset[];
+}): StudioOpsModel {
+  const activeRuns = data.runs.filter((run) => runMatchesStatus(run, "active"));
+  const reviewRuns = data.runs.filter((run) => run.status === "needs_review");
+  const failedRuns = data.runs.filter((run) => run.status === "failed");
+  const activeWorkflows = workflows.filter((workflow) => workflow.status === "active" && !workflow.validation_error);
+  const configuredProviderCount = [
+    settings.hasHermesApiKey,
+    settings.comfyuiCloudReady,
+    settings.hasOpenaiApiKey,
+    settings.hasWavespeedApiKey
+  ].filter(Boolean).length;
+  const latestFailure = failedRuns
+    .slice()
+    .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())[0] ?? null;
+  const providerReadiness = [
+    { label: "Mock providers", status: settings.mockProviders ? "Active" : "Disabled", detail: settings.mockProviders ? "Local fallback is available." : "Live provider routing is enabled." },
+    { label: "Hermes", status: settings.hasHermesApiKey ? "Key saved" : "No key", detail: settings.defaultAnalysisProvider === "hermes" || settings.defaultImageGenerationProvider === "hermes" ? "Selected in routing." : "Available when selected." },
+    { label: "ComfyUI Cloud", status: settings.comfyuiCloudReady ? "Ready" : settings.hasComfyuiCloudApiKey ? "Needs workflow" : "No key", detail: `${activeWorkflows.length} active workflow${activeWorkflows.length === 1 ? "" : "s"}.` },
+    { label: "OpenAI Images", status: settings.hasOpenaiApiKey ? "Key saved" : "No key", detail: settings.defaultImageGenerationProvider === "openai" ? "Selected for image production." : "Available when selected." },
+    { label: "WaveSpeed AI", status: settings.hasWavespeedApiKey ? "Key saved" : "No key", detail: settings.defaultImageGenerationProvider === "wavespeed" ? "Selected for image production." : "Available when selected." }
+  ];
+  const tabs: StudioOpsModel["tabs"] = [
+    { id: "overview", label: "Overview", value: data.health?.ok ? "OK" : "Check", detail: "Health + readiness" },
+    { id: "logs", label: "Production Logs", value: data.runs.length, detail: `${activeRuns.length + reviewRuns.length} active/review` },
+    { id: "providers", label: "Providers", value: settings.mockProviders ? "Mock" : "Live", detail: `${configuredProviderCount} ready` },
+    { id: "workflows", label: "Workflow Engines", value: workflows.length, detail: `${activeWorkflows.length} active` },
+    { id: "automation", label: "Automation", value: automationStatus?.schedulerEnabled ? "On" : "Off", detail: `${automationStatus?.runsNeedingReview.length ?? 0} review gates` },
+    { id: "manual", label: "Console", value: data.characters.length, detail: "Manual dispatch" },
+    { id: "audit", label: "Technical Audit", value: "IDs", detail: "Raw state + storage" }
+  ];
+
+  return {
+    headline: settings.mockProviders ? "Mock providers active" : "Live providers active",
+    primaryQuestion: "What did the machine do, and is the studio configured correctly?",
+    overviewCards: [
+      { label: "API health", value: data.health?.ok ? "Online" : "Offline", detail: data.health?.service ?? "Local API" },
+      { label: "Provider readiness", value: settings.mockProviders ? "Mock" : configuredProviderCount, detail: settings.mockProviders ? "Local fallback active" : `${configuredProviderCount} provider${configuredProviderCount === 1 ? "" : "s"} ready` },
+      { label: "Scheduler", value: automationStatus?.schedulerEnabled ? "On" : "Off", detail: automationStatus?.nextRunAt ? formatDate(automationStatus.nextRunAt) : "Manual dispatch" },
+      { label: "Production attention", value: reviewRuns.length + failedRuns.length, detail: `${reviewRuns.length} review, ${failedRuns.length} failed` }
+    ],
+    tabs,
+    productionLogSummary: {
+      total: data.runs.length,
+      active: activeRuns.length,
+      review: reviewRuns.length,
+      failed: failedRuns.length,
+      latestFailure
+    },
+    providerReadiness,
+    technicalAudit: {
+      api: {
+        ok: Boolean(data.health?.ok),
+        service: data.health?.service ?? "unknown",
+        version: data.health?.version,
+        dataDir: data.health?.dataDir
+      },
+      productionLogIds: data.runs.map((run) => run.id),
+      workflowIds: workflows.map((workflow) => workflow.id),
+      promptRecipeIds: promptRecipes.map((recipe) => recipe.id),
+      assetIds: assets.map((asset) => asset.id)
+    }
+  };
+}
+
+export function buildDirectorDeskModel(data: AppData, error: string | null = null): DirectorDeskModel {
+  const activeRuns = data.runs.filter((run) => ["queued", "running", "waiting_for_provider"].includes(run.status));
+  const reviewRuns = data.runs.filter((run) => run.status === "needs_review");
+  const failedRuns = data.runs.filter((run) => run.status === "failed");
+  const reviewStage = data.workflowSummary.find((stage) => stage.id === "review");
+  const productionStage = data.workflowSummary.find((stage) => stage.id === "production");
+  const publishingStage = data.workflowSummary.find((stage) => stage.id === "publishing");
+  const feedbackStage = data.workflowSummary.find((stage) => stage.id === "feedback");
+  const birthStage = data.workflowSummary.find((stage) => stage.id === "birth");
+  const characterRunMap = buildCharacterRunMap(data.runs);
+  const characterRunIds = new Set(data.runs.filter((run) => run.character_id).map((run) => run.character_id));
+  const setupCharacters = data.characters.filter((character) => characterNeedsSetup(character, characterRunIds));
+  const characterNames = new Map(data.characters.map((character) => [character.id, displayModelName(character.name)]));
+  const reviewDraftCount = countFromWorkflowDetail(reviewStage, "draft");
+  const careerDirectionCount = countFromWorkflowDetail(reviewStage, "identity proposal");
+  const reviewRunCount = countFromWorkflowDetail(reviewStage, "run") || reviewRuns.length;
+  const birthReviewCount = reviewRuns.filter((run) => run.type === "character_birth").length;
+  const portfolioCandidateCount = productionStage?.status === "attention" ? productionStage.count : 0;
+  const publishingReadyCount = publishingStage?.status === "attention" ? publishingStage.count : 0;
+  const audienceAttentionCount = feedbackStage?.status === "attention" ? feedbackStage.count : 0;
+  const blockedStageCount = data.workflowSummary
+    .filter((stage) => stage.status === "blocked")
+    .reduce((total, stage) => total + Math.max(stage.count, 1), 0);
+  const studioAttentionCount = failedRuns.length + blockedStageCount;
+
+  const todayDecisions: DirectorDeskItem[] = [
+    {
+      id: "talent-approval",
+      title: "talent items need approval",
+      detail: birthReviewCount
+        ? "New Face output is waiting for a director decision."
+        : "Roster profiles need development before the agency can book them.",
+      count: birthReviewCount + setupCharacters.length,
+      path: birthReviewCount ? "/create" : "/talent",
+      actionLabel: birthReviewCount ? "Open Scouting" : "Open Roster",
+      priority: 1
+    },
+    {
+      id: "social-package-review",
+      title: "social packages need approval",
+      detail: "Review Desk has caption, disclosure, or package decisions waiting.",
+      count: reviewDraftCount,
+      path: stagePath(reviewStage, "/review"),
+      actionLabel: "Open Review Desk",
+      priority: 2
+    },
+    {
+      id: "production-review",
+      title: "production decisions need approval",
+      detail: "Production output is waiting for a director go/no-go.",
+      count: Math.max(0, reviewRunCount - birthReviewCount),
+      path: "/runs?status=needs_review",
+      actionLabel: "Open Production Logs",
+      priority: 3
+    },
+    {
+      id: "publishing-ready",
+      title: "social packages ready for publishing",
+      detail: "Publishing has approved work waiting for manual placement or follow-up.",
+      count: publishingReadyCount,
+      path: stagePath(publishingStage, "/calendar"),
+      actionLabel: "Open Publishing",
+      priority: 4
+    },
+    {
+      id: "audience-debrief",
+      title: "audience responses need debrief",
+      detail: feedbackStage?.detail ?? "Audience response needs to be logged or interpreted.",
+      count: audienceAttentionCount,
+      path: stagePath(feedbackStage, "/insights"),
+      actionLabel: "Open Audience",
+      priority: 5
+    },
+    {
+      id: "career-direction",
+      title: "career direction proposals waiting",
+      detail: "Audience-led memory, canon, or identity updates need director approval.",
+      count: careerDirectionCount,
+      path: "/review",
+      actionLabel: "Open Review Desk",
+      priority: 6
+    },
+    {
+      id: "portfolio-review",
+      title: "portfolio candidates need review",
+      detail: productionStage?.detail ?? "Candidate shots need director review.",
+      count: portfolioCandidateCount,
+      path: stagePath(productionStage, "/library"),
+      actionLabel: "Open Portfolio",
+      priority: 7
+    },
+    {
+      id: "studio-attention",
+      title: "Studio Ops items need attention",
+      detail: "Failed or blocked production needs a technical follow-up outside the director desk.",
+      count: studioAttentionCount,
+      path: "/settings",
+      actionLabel: "Open Studio Ops",
+      priority: 8
+    }
+  ]
+    .filter((item) => (item.count ?? 0) > 0)
+    .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0));
+
+  const starWatch = data.characters
+    .map<DirectorDeskItem>((character) => {
+      const runs = characterRunMap.get(character.id) ?? [];
+      const latestRun = runs[0];
+      const hasFailedProduction = runs.some((run) => run.status === "failed");
+      const hasCareerDecision = runs.some((run) => run.status === "needs_review" && ["feedback_reflection", "canon_evolution"].includes(run.type));
+      const hasWorkingActivity = runs.some((run) => ["daily_activity", "image_generation", "draft_packaging"].includes(run.type));
+      const needsDevelopment = setupCharacters.some((item) => item.id === character.id);
+      const name = displayModelName(character.name);
+      if (hasFailedProduction) {
+        return {
+          id: `watch-${character.id}`,
+          title: "At-risk talent",
+          detail: `${name} has production work that needs Studio Ops attention.`,
+          path: `/characters/${character.id}`,
+          actionLabel: "Open Talent Profile",
+          priority: 1
+        };
+      }
+      if (hasCareerDecision) {
+        return {
+          id: `watch-${character.id}`,
+          title: "Career direction waiting",
+          detail: `${name} has an audience-led decision ready for review.`,
+          path: `/characters/${character.id}`,
+          actionLabel: "Open Talent Profile",
+          priority: 2
+        };
+      }
+      if (needsDevelopment) {
+        return {
+          id: `watch-${character.id}`,
+          title: "New Face needs development",
+          detail: `${name} needs identity, bookings, or early portfolio work.`,
+          path: `/characters/${character.id}`,
+          actionLabel: "Open Talent Profile",
+          priority: 3
+        };
+      }
+      if (hasWorkingActivity) {
+        return {
+          id: `watch-${character.id}`,
+          title: "Working talent",
+          detail: `${name} has recent agency work${latestRun ? `: ${runTypeLabel(latestRun.type).toLowerCase()}.` : "."}`,
+          path: `/characters/${character.id}`,
+          actionLabel: "Open Talent Profile",
+          priority: 4
+        };
+      }
+      return {
+        id: `watch-${character.id}`,
+        title: "Development watch",
+        detail: `${name} is represented but needs more public signal before star ranking.`,
+        path: `/characters/${character.id}`,
+        actionLabel: "Open Talent Profile",
+        priority: 5
+      };
+    })
+    .sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0))
+    .slice(0, 4);
+
+  const todaysBookings = [
+    ...activeRuns.slice(0, 3).map<DirectorDeskItem>((run) => {
+      const talentName = run.character_id ? characterNames.get(run.character_id) ?? "Selected talent" : "Unassigned talent";
+      return {
+        id: `booking-${run.id}`,
+        title: bookingTitleForRun(run),
+        detail: `${talentName} · ${productionDeskStatus(run)}`,
+        path: productionPathForRun(run),
+        actionLabel: "Open work area",
+        priority: 1
+      };
+    }),
+    ...(data.automationStatus?.nextRunAt
+      ? [{
+          id: "booking-next-window",
+          title: "Next supervised booking window",
+          detail: `${formatTime(data.automationStatus.nextRunAt)} · ${(data.automationStatus.settings.defaultPlatforms ?? []).map(platformLabel).join(", ") || "Platforms not selected"}`,
+          path: "/prompt-studio",
+          actionLabel: "Open Bookings",
+          priority: 2
+        }]
+      : [])
+  ].slice(0, 4);
+
+  const audienceSignals: DirectorDeskItem[] = [];
+  if (feedbackStage?.status === "attention") {
+    audienceSignals.push({
+      id: "audience-attention",
+      title: feedbackStage.primaryActionLabel === "Run reflection" ? "Audience debrief ready" : "Audience response needs logging",
+      detail: feedbackStage.detail,
+      path: stagePath(feedbackStage, "/insights"),
+      actionLabel: feedbackStage.primaryActionLabel === "Run reflection" ? "Debrief Response" : "Log Response",
+      count: feedbackStage.count,
+      priority: 1
+    });
+  } else if (feedbackStage?.status === "complete") {
+    audienceSignals.push({
+      id: "audience-learning",
+      title: "Audience learning available",
+      detail: "Recent response has already fed reflection or career direction.",
+      path: "/insights",
+      actionLabel: "Open Audience",
+      priority: 2
+    });
+  }
+  const audienceReviewRuns = reviewRuns.filter((run) => ["feedback_reflection", "canon_evolution"].includes(run.type));
+  if (audienceReviewRuns.length) {
+    audienceSignals.push({
+      id: "audience-career-review",
+      title: "Audience-led career update waiting",
+      detail: `${pluralize(audienceReviewRuns.length, "debrief")} need director approval in the Review Desk.`,
+      path: "/review",
+      actionLabel: "Open Review Desk",
+      count: audienceReviewRuns.length,
+      priority: 3
+    });
+  }
+
+  const publishingFollowUp: DirectorDeskItem[] = [];
+  if (publishingStage?.status === "attention") {
+    publishingFollowUp.push({
+      id: "publishing-ready",
+      title: "Packages ready to place",
+      detail: publishingStage.detail,
+      path: stagePath(publishingStage, "/calendar"),
+      actionLabel: "Open Publishing",
+      count: publishingStage.count,
+      priority: 1
+    });
+  } else if (publishingStage?.count) {
+    publishingFollowUp.push({
+      id: "publishing-ledger",
+      title: "Live placement ledger has activity",
+      detail: publishingStage.detail,
+      path: "/calendar",
+      actionLabel: "Open Publishing",
+      count: publishingStage.count,
+      priority: 2
+    });
+  }
+  if (feedbackStage?.status === "attention" && feedbackStage.detail.includes("published event")) {
+    publishingFollowUp.push({
+      id: "publishing-response-due",
+      title: "Live posts need audience response",
+      detail: "Publishing follow-up is not closed until response is logged.",
+      path: stagePath(feedbackStage, "/insights"),
+      actionLabel: "Open Audience",
+      count: feedbackStage.count,
+      priority: 3
+    });
+  }
+
+  const schedulerState = data.automationStatus?.schedulerEnabled
+    ? data.automationStatus.nextRunAt
+      ? `Next booking window ${formatTime(data.automationStatus.nextRunAt)}`
+      : "Schedule enabled"
+    : "Schedule paused";
+  const studioNeedsAttention = Boolean(error) || !data.health?.ok || failedRuns.length > 0 || blockedStageCount > 0;
+  const primaryDecision = todayDecisions[0];
+
+  return {
+    todayDecisions,
+    starWatch,
+    todaysBookings,
+    audienceSignals: audienceSignals.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)).slice(0, 3),
+    publishingFollowUp: publishingFollowUp.sort((a, b) => (a.priority ?? 0) - (b.priority ?? 0)).slice(0, 3),
+    primaryAction: {
+      label: "Review Today's Decisions",
+      path: primaryDecision?.path ?? "/review"
+    },
+    studioOpsHealth: {
+      summary: studioNeedsAttention ? "Studio Ops: needs attention" : "Studio Ops: healthy",
+      detail: studioNeedsAttention
+        ? "Open Studio Ops for failed production, local API, or schedule follow-up."
+        : "Technical details are available when needed.",
+      apiStatus: data.health?.ok && !error ? "API online" : "API needs attention",
+      engineStatus: "Production setup visible in Studio Ops",
+      schedulerState,
+      activeProductions: activeRuns.length,
+      failedProductions: failedRuns.length
+    }
+  };
+}
+
 function outputRecommendation(draft: Draft | null, variant: PlatformVariant | null) {
   if (!draft) return "Select an output to review.";
   const analysis = draft.asset?.latestAnalysis;
@@ -968,7 +2346,7 @@ function outputDecisionPrompt(draft: Draft | null) {
 
 function outputNextStep(draft: Draft | null, hasExport: boolean, publishEvent: PublishingEvent | undefined) {
   if (!draft) return "Selected outputs show their next workflow step here.";
-  if (publishEvent || draft.status === "published") return "Feedback and learnings move to Insights.";
+  if (publishEvent || draft.status === "published") return "Audience response and learnings move to Audience.";
   if (draft.status === "exported" || hasExport) return "Publishing ledger captures the final URL and notes.";
   if (draft.status === "approved") return "Export creates a local publishing package for Schedule.";
   if (draft.status === "rejected") return "Rejected outputs stay available in Review history.";
@@ -992,6 +2370,265 @@ function outputDebugPayload(draft: Draft, variant: PlatformVariant | null) {
     packages: draft.packages,
     publishingEvents: draft.publishingEvents
   };
+}
+
+function talentNameMap(characters: Array<CharacterSummary | CharacterDetail>) {
+  return new Map(characters.map((character) => [character.id, displayModelName(character.name)]));
+}
+
+function talentNameFromMap(names: Map<string, string>, talentId: string | null | undefined) {
+  return talentId ? names.get(talentId) ?? "Selected talent" : "Studio";
+}
+
+function reviewTypeLabel(type: ReviewDecisionType) {
+  if (type === "portfolio_candidate") return "Portfolio";
+  if (type === "social_package") return "Social Package";
+  if (type === "career_direction") return "Career Direction";
+  return "Studio Attention";
+}
+
+function proposalKindLabel(kind: string) {
+  if (kind === "constitution_patch") return "Identity Bible";
+  if (kind === "canon") return "Canon";
+  if (kind === "memory") return "Memory";
+  return kind.replaceAll("_", " ");
+}
+
+function portfolioRecommendation(asset: ImageAsset) {
+  const analysis = asset.latestAnalysis;
+  const recommendedAction = analysis?.recommended_action?.toLowerCase() ?? "";
+  if (!analysis) return "Run quality review before approving this shot.";
+  if (recommendedAction.includes("reject") || recommendedAction.includes("regenerate") || analysis.quality_issues.length > 0) {
+    return "Request revision before publishing.";
+  }
+  if (recommendedAction.includes("reference")) return "Add to portfolio as an identity anchor.";
+  return "Approve for publishing.";
+}
+
+function portfolioReasons(asset: ImageAsset) {
+  const analysis = asset.latestAnalysis;
+  if (!analysis) {
+    return [
+      "Candidate shot exists but identity, quality, and platform fit have not been reviewed.",
+      "A quality review will turn the raw production output into a director decision.",
+      "The shot stays out of publishing until the review gate is complete."
+    ];
+  }
+  const reasons = [
+    analysis.identity_match ? `Identity read: ${analysis.identity_match}.` : "Identity fit is ready for director judgment.",
+    analysis.identity_notes ? compactInlineText(analysis.identity_notes, 140) : "No identity drift note was flagged.",
+    analysis.platform_fit.length ? `Best platform fit: ${analysis.platform_fit.map(platformLabel).join(", ")}.` : "Platform fit needs director judgment."
+  ];
+  if (analysis.quality_issues.length) {
+    reasons.push(`Quality issue to resolve: ${analysis.quality_issues[0]}.`);
+  } else {
+    reasons.push("No major quality issue was flagged.");
+  }
+  return reasons;
+}
+
+function portfolioRisk(asset: ImageAsset) {
+  const analysis = asset.latestAnalysis;
+  if (!analysis) return "Identity and quality risk are unknown until review runs.";
+  if (analysis.quality_issues.length) return `Medium: ${analysis.quality_issues[0]}.`;
+  if (analysis.identity_score < 0.7) return "Medium: identity match may be too weak for public use.";
+  return "Low. Keep caption and placement aligned with the current booking.";
+}
+
+function socialPackageRisk(draft: Draft, variant: PlatformVariant | null) {
+  const analysis = draft.asset?.latestAnalysis;
+  if (analysis?.quality_issues.length) return `Medium: ${analysis.quality_issues[0]}.`;
+  if (!variant?.caption) return "Medium: platform copy is missing.";
+  if (!variant.disclosure_text) return "Medium: disclosure should be checked before placement.";
+  if (variant.caption.length < 80) return "Low: caption may need more personality.";
+  return "Low. Final placement still requires manual publishing.";
+}
+
+function socialPackagePrimaryAction(draft: Draft) {
+  if (draft.status === "approved") return "Prepare Placement Package";
+  if (draft.status === "exported") return "Mark Live";
+  return "Approve Package";
+}
+
+export function buildReviewDecisionPackets({
+  characters,
+  drafts,
+  assets,
+  runs
+}: {
+  characters: Array<CharacterSummary | CharacterDetail>;
+  drafts: Draft[];
+  assets: ImageAsset[];
+  runs: RunSummary[];
+}): ReviewDecisionPacket[] {
+  const names = talentNameMap(characters);
+  const representedRunIds = new Set<string>();
+  drafts.forEach((draft) => {
+    if (draft.run_id) representedRunIds.add(draft.run_id);
+    if (draft.asset?.run_id) representedRunIds.add(draft.asset.run_id);
+  });
+  assets.forEach((asset) => {
+    if (asset.run_id) representedRunIds.add(asset.run_id);
+  });
+
+  const portfolioPackets = assets
+    .filter((asset) => ["raw_generation", "candidate"].includes(asset.status))
+    .map<ReviewDecisionPacket>((asset) => {
+      const talentName = talentNameFromMap(names, asset.character_id);
+      const analyzed = Boolean(asset.latestAnalysis);
+      return {
+        id: `portfolio:${asset.id}`,
+        type: "portfolio_candidate",
+        title: `Candidate portfolio shot for ${talentName}`,
+        talentId: asset.character_id,
+        talentName,
+        statusLabel: assetStatusLabel(asset.status),
+        summary: asset.latestAnalysis?.summary ?? "Production created a candidate shot that needs a director portfolio decision.",
+        recommendation: portfolioRecommendation(asset),
+        why: portfolioReasons(asset),
+        risk: portfolioRisk(asset),
+        consequence: analyzed
+          ? "Approval makes the shot eligible for portfolio use and social packaging; rejection keeps it out of the talent's book."
+          : "Quality review will add identity, quality, and platform-fit notes before approval.",
+        primaryActionLabel: analyzed ? "Approve for Publishing" : "Review Quality",
+        secondaryActionLabels: analyzed ? ["Add to Portfolio", "Request Revision", "Reject"] : ["Open Portfolio"],
+        previewImageAssetId: asset.id,
+        previewAlt: safeAssetAltText(asset.latestAnalysis?.alt_text, `Candidate portfolio shot for ${talentName}`),
+        createdAt: asset.created_at,
+        priority: analyzed ? 20 : 24,
+        technicalSource: {
+          assetId: asset.id,
+          runId: asset.run_id,
+          proposalId: null,
+          draftId: null
+        },
+        technicalAudit: {
+          asset,
+          analysis: asset.latestAnalysis
+        }
+      };
+    });
+
+  const socialPackets = drafts
+    .filter((draft) => ["needs_review", "approved", "exported"].includes(draft.status))
+    .filter((draft) => !(draft.publishingEvents ?? []).some((event) => event.status === "published" || event.published_at))
+    .map<ReviewDecisionPacket>((draft) => {
+      const variant = draft.variants?.[0] ?? null;
+      const talentName = talentNameFromMap(names, draft.character_id);
+      const hasExport = Boolean(draft.packages?.length);
+      return {
+        id: `social:${draft.id}`,
+        type: "social_package",
+        title: `Social package for ${talentName} — ${draft.title}`,
+        talentId: draft.character_id,
+        talentName,
+        statusLabel: draft.status.replaceAll("_", " "),
+        summary: draft.summary ?? outputReviewHappened(draft, variant),
+        recommendation: outputRecommendation(draft, variant),
+        why: outputReviewReasons(draft, variant),
+        risk: socialPackageRisk(draft, variant),
+        consequence: outputNextStep(draft, hasExport, undefined),
+        primaryActionLabel: socialPackagePrimaryAction(draft),
+        secondaryActionLabels: draft.status === "needs_review" ? ["Edit Copy", "Request Revision", "Reject"] : ["Edit Copy", "Open Publishing"],
+        previewImageAssetId: draft.asset?.id,
+        previewAlt: safeAssetAltText(draft.asset?.latestAnalysis?.alt_text, draft.title),
+        createdAt: draft.created_at,
+        priority: draft.status === "needs_review" ? 10 : draft.status === "approved" ? 12 : 14,
+        technicalSource: {
+          draftId: draft.id,
+          assetId: draft.asset_id,
+          runId: draft.run_id,
+          proposalId: null
+        },
+        technicalAudit: outputDebugPayload(draft, variant)
+      };
+    });
+
+  const careerPackets = characters.flatMap<ReviewDecisionPacket>((character) => {
+    if (!hasCharacterDetail(character)) return [];
+    return character.identityProposals
+      .filter((proposal) => proposal.status === "proposed")
+      .map<ReviewDecisionPacket>((proposal) => {
+        const talentName = displayModelName(character.name);
+        const riskLevel = proposal.risk_level || "unknown";
+        return {
+          id: `career:${proposal.id}`,
+          type: "career_direction",
+          title: `Career direction proposal for ${talentName}`,
+          talentId: character.id,
+          talentName,
+          statusLabel: `${proposalKindLabel(proposal.kind)} proposed`,
+          summary: compactInlineText(proposal.body, 180) || "A career direction update needs director approval.",
+          recommendation: riskLevel === "high" ? "Review carefully before accepting this career update." : "Approve this career update.",
+          why: [
+            proposal.rationale ? compactInlineText(proposal.rationale, 160) : "Audience learning produced a proposed identity or career update.",
+            `This would update ${proposalKindLabel(proposal.kind).toLowerCase()} for future bookings.`,
+            "The change remains gated until the director approves it."
+          ],
+          risk: riskLevel === "low" ? "Low. Keep future bookings varied so the talent does not become repetitive." : `${proposalKindLabel(proposal.kind)} risk is ${riskLevel}.`,
+          consequence: "Approval teaches future bookings and audience interpretation; rejection leaves the current talent direction unchanged.",
+          primaryActionLabel: "Approve Career Update",
+          secondaryActionLabels: ["Reject"],
+          previewImageAssetId: null,
+          previewAlt: `Career direction proposal for ${talentName}`,
+          createdAt: null,
+          priority: 30,
+          technicalSource: {
+            proposalId: proposal.id,
+            runId: proposal.run_id ?? proposal.source_run_id ?? null,
+            assetId: null,
+            draftId: null
+          },
+          technicalAudit: {
+            proposal,
+            characterId: character.id
+          }
+        };
+      });
+  });
+
+  const studioPackets = runs
+    .filter((run) => run.status === "needs_review" && !representedRunIds.has(run.id))
+    .map<ReviewDecisionPacket>((run) => {
+      const talentName = talentNameFromMap(names, run.character_id);
+      return {
+        id: `studio:${run.id}`,
+        type: "studio_attention",
+        title: "Production job needs attention",
+        talentId: run.character_id,
+        talentName,
+        statusLabel: "Needs review",
+        summary: `${runTypeLabel(run.type)} paused before the next agency step.`,
+        recommendation: run.error ? "Open Studio Ops before continuing." : "Open the production log and decide the next manual step.",
+        why: [
+          "The job is paused at a human-visible review gate.",
+          run.error ? "The job reported an execution error." : "The machine output needs interpretation before the agency flow continues.",
+          `This work is connected to ${talentName}.`
+        ],
+        risk: "The queue may stay blocked until this production job is resolved.",
+        consequence: "Opening the log exposes the full trace so the operator can recover, retry, or move the work forward.",
+        primaryActionLabel: "Open Production Log",
+        secondaryActionLabels: ["Open Studio Ops"],
+        previewImageAssetId: null,
+        previewAlt: "Production job needs attention",
+        createdAt: run.updated_at,
+        priority: 40,
+        technicalSource: {
+          runId: run.id,
+          assetId: null,
+          draftId: null,
+          proposalId: null
+        },
+        technicalAudit: { run }
+      };
+    });
+
+  return [...socialPackets, ...portfolioPackets, ...careerPackets, ...studioPackets].sort((a, b) => {
+    if (a.priority !== b.priority) return a.priority - b.priority;
+    const aTime = a.createdAt ? new Date(a.createdAt).getTime() : 0;
+    const bTime = b.createdAt ? new Date(b.createdAt).getTime() : 0;
+    return bTime - aTime;
+  });
 }
 
 function nextWorkflowStage(stageId: WorkflowStageId) {
@@ -1077,7 +2714,7 @@ function runFilterLabel(filter: string) {
     return "all statuses";
   }
   if (filter === "active") {
-    return "active runs";
+    return "active jobs";
   }
   return statusLabel(filter);
 }
@@ -1130,7 +2767,7 @@ function StatusChoiceGroup({
 function JsonDetails({ value }: { value: unknown }) {
   return (
     <details className="raw-details">
-      <summary>Raw details</summary>
+      <summary>Technical audit</summary>
       <pre>{JSON.stringify(value, null, 2)}</pre>
     </details>
   );
@@ -1175,7 +2812,7 @@ function AppShell({
   path: string;
   navigate: (path: string) => void;
 }) {
-  const apiStatusLabel = data.health?.ok ? "API online" : error ? "API offline" : "Checking API";
+  const apiStatusLabel = data.health?.ok ? "Studio Ops online" : error ? "Studio Ops offline" : "Checking Studio Ops";
   const handleInternalLink = (event: MouseEvent<HTMLAnchorElement>, nextPath: string) => {
     if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
       return;
@@ -1203,11 +2840,11 @@ function AppShell({
           <div className="brand-mark" aria-hidden="true" />
           <div className="brand-copy">
             <strong>Virtual Agency Studio</strong>
-            <span>Agentic social studio</span>
+            <span>Virtual talent agency</span>
           </div>
         </a>
 
-        <div className="rail-section-label">Operations</div>
+        <div className="rail-section-label">Agency</div>
         <nav className="nav-list">
           {navItems.map((item) => {
             const active = workModeActive(path, item.id);
@@ -1236,21 +2873,19 @@ function AppShell({
 
         <div className="rail-footer">
           <span className="operator-mark">VA</span>
-          <span>Agency Operator</span>
-          <strong>Local Operator</strong>
+          <span>Agency Director</span>
+          <strong>Director</strong>
         </div>
         <div className="rail-system">
-          <span>System</span>
+          <span>Studio Ops</span>
           <strong><Command aria-hidden="true" size={14} weight="regular" /> Health <i aria-hidden="true" /></strong>
         </div>
       </aside>
 
       <main className="workspace" id="workspace">
         <div className="workspace-chrome">
-          <div className="workspace-status-strip" aria-label="System state">
-            <span><Circle aria-hidden="true" size={7} weight="fill" />Local mode</span>
-            <span><Circle aria-hidden="true" size={7} weight="fill" />LLM</span>
-            <span><Circle aria-hidden="true" size={7} weight="fill" />Storage</span>
+          <div className="workspace-status-strip" aria-label="Studio Ops health">
+            <span><Circle aria-hidden="true" size={7} weight="fill" />Studio Ops Health</span>
           </div>
           <div className="workspace-clock">
             <strong>{new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}</strong>
@@ -1260,7 +2895,7 @@ function AppShell({
             <span aria-hidden="true" />
           </div>
         </div>
-        <nav className="studio-flow" aria-label="Operator work modes">
+        <nav className="studio-flow" aria-label="Agency workflow">
           {workModeSteps.map((step, index) => {
             const active = workModeActive(path, step.id);
             const summary = stageSummaryForMode(data, step.id);
@@ -1300,127 +2935,151 @@ function HeartbeatDashboard({
   error: string | null;
   navigate: (path: string) => void;
 }) {
-  const runs = data.runs;
-  const activeRuns = runs.filter((run) => ["queued", "running", "waiting_for_provider"].includes(run.status));
-  const reviewRuns = runs.filter((run) => run.status === "needs_review");
-  const characterRunIds = new Set(runs.filter((run) => run.character_id).map((run) => run.character_id));
-  const setupCharacters = data.characters.filter((character) => characterNeedsSetup(character, characterRunIds));
-  const automationStatus = data.automationStatus;
-  const reviewStage = data.workflowSummary.find((stage) => stage.id === "review");
-  const publishingStage = data.workflowSummary.find((stage) => stage.id === "publishing");
-  const blockedAutomations = data.workflowSummary.filter((stage) => stage.status === "blocked").reduce((total, stage) => total + Math.max(stage.count, 1), 0);
-  const reviewCount = reviewStage?.count ?? reviewRuns.length;
-  const activeRun = automationStatus?.currentlyRunning ?? activeRuns[0] ?? null;
-  const readyReviewItems = [
-    ...(automationStatus?.runsNeedingReview ?? []),
-    ...reviewRuns.filter((run) => !(automationStatus?.runsNeedingReview ?? []).some((item) => item.id === run.id))
-  ].slice(0, 3);
-  const scheduledToday = publishingStage?.count ?? 0;
-  const nextWindow = formatTime(automationStatus?.nextRunAt);
-  const systemHealthy = Boolean(data.health?.ok) && !error;
-  const primaryAction = reviewCount
-    ? { label: "Review outputs", path: "/review" }
-    : activeRun
-      ? { label: "View run", path: `/runs/${activeRun.id}` }
-      : setupCharacters[0]
-        ? { label: "Continue setup", path: `/characters/${setupCharacters[0].id}` }
-        : scheduledToday
-          ? { label: "Open schedule", path: "/calendar" }
-          : { label: "Start creating", path: "/create" };
+  const desk = buildDirectorDeskModel(data, error);
 
   return (
     <>
       <header className="topbar page-heading">
         <div>
           <span className="eyebrow">Studio</span>
-          <h1>Virtual Agency Studio</h1>
+          <h1>Director's Desk</h1>
+          <p>Start with approvals, follow-up, and talent signals that need a director decision today.</p>
         </div>
       </header>
 
-      {loading && <div className="notice">Loading local machine state.</div>}
+      {loading && <div className="notice">Loading agency desk.</div>}
       {error && <div className="notice error">{error}</div>}
 
-      <section className="priority-board command-router" aria-label="Today in Virtual Agency Studio">
-        <article className="review-command today-router">
-          <span>Today</span>
-          <ul className="attention-list">
-            <li><strong>{reviewCount}</strong><span>{reviewCount === 1 ? "output needs review" : "outputs need review"}</span></li>
-            <li><strong>{activeRuns.length}</strong><span>{activeRuns.length === 1 ? "run is in progress" : "runs are in progress"}</span></li>
-            <li><strong>{setupCharacters.length}</strong><span>{setupCharacters.length === 1 ? "character needs setup" : "characters need setup"}</span></li>
-            <li><strong>{blockedAutomations}</strong><span>{blockedAutomations === 1 ? "blocked automation" : "blocked automations"}</span></li>
-          </ul>
+      <section className="priority-board command-router director-priority-board" aria-label="Today in Virtual Agency Studio">
+        <article className="review-command today-router director-decisions">
+          <span>Today's Decisions</span>
+          {desk.todayDecisions.length === 0 ? (
+            <EmptyState
+              title="The desk is clear."
+              body="No talent, publishing, or audience decisions need attention right now. Scout a New Face, open Roster, or prepare a Booking when you want to create new work."
+            />
+          ) : (
+            <div className="director-decision-list">
+              {desk.todayDecisions.map((decision) => (
+                <button className="director-decision-row" key={decision.id} type="button" onClick={() => navigate(decision.path)}>
+                  <strong>{decision.count}</strong>
+                  <span>
+                    <b>{decision.title}</b>
+                    <small>{decision.detail}</small>
+                  </span>
+                </button>
+              ))}
+            </div>
+          )}
           <div className="review-command-actions">
-            <button className="primary-action" type="button" onClick={() => navigate(primaryAction.path)}>
-              {primaryAction.label}
+            <button className="primary-action" type="button" onClick={() => navigate(desk.primaryAction.path)}>
+              {desk.primaryAction.label}
             </button>
           </div>
         </article>
 
-        <article className="settings-preview command-health">
+        <article className="settings-preview director-watch">
           <div className="section-heading">
-            <h2>System Health</h2>
-            <button type="button" onClick={() => navigate("/settings")}>View details</button>
+            <h2>Star Watch</h2>
+            <button type="button" onClick={() => navigate("/talent")}>Open Roster</button>
           </div>
-          <strong>{systemHealthy ? "All providers connected" : "System needs attention"}</strong>
-          <p>{systemHealthy ? "Local API is online and the studio can use configured provider routing." : "Open system details to inspect provider routing and local API state."}</p>
+          <DirectorDeskList
+            items={desk.starWatch}
+            emptyTitle="No stars yet."
+            emptyBody="Publish work and log audience response to see which talent earns more agency attention."
+            navigate={navigate}
+          />
         </article>
       </section>
 
-      <section className="command-detail-grid">
-        <article className="machine-room">
+      <section className="command-detail-grid director-desk-grid">
+        <article className="machine-room director-bookings">
           <div className="section-heading">
-            <h2>Active Run</h2>
-            {activeRun && <button type="button" onClick={() => navigate(`/runs/${activeRun.id}`)}>View run</button>}
+            <h2>Today's Bookings</h2>
+            <button type="button" onClick={() => navigate("/prompt-studio")}>Open Bookings</button>
           </div>
-          {!activeRun ? (
-            <EmptyState title="No active run" body="Start a creative run when you are ready to put the machine to work." />
-          ) : (
-            <div className="active-run-card">
-              <strong>{humanRunTitle(activeRun)}</strong>
-              <dl>
-                <div><dt>Status</dt><dd>{activeRunStatusText(activeRun)}</dd></div>
-                <div><dt>Progress</dt><dd>{activeRunProgress(activeRun)}</dd></div>
-              </dl>
-            </div>
-          )}
+          <DirectorDeskList
+            items={desk.todaysBookings}
+            emptyTitle="No bookings are active today."
+            emptyBody="Prepare a booking idea or start production from a creative treatment when a talent is ready for the next assignment."
+            navigate={navigate}
+          />
         </article>
 
         <div className="command-side-stack">
-          <article className="settings-preview">
-            <div className="section-heading"><h2>Ready for Review</h2></div>
-            {readyReviewItems.length === 0 ? (
-              <EmptyState title="Nothing waiting" body="Approved and blocked work will stay out of the way until action is needed." />
-            ) : (
-              <div className="run-stack compact-review-list">
-                {readyReviewItems.map((run) => (
-                  <button className="run-row" key={run.id} onClick={() => navigate(`/runs/${run.id}`)} type="button">
-                    <span>
-                      <strong>{reviewItemLabel(run)}</strong>
-                      <small>{runTypeLabel(run.type)}</small>
-                    </span>
-                  </button>
-                ))}
-              </div>
-            )}
+          <article className="settings-preview director-audience">
+            <div className="section-heading">
+              <h2>Audience Signals</h2>
+              <button type="button" onClick={() => navigate("/insights")}>Open Audience</button>
+            </div>
+            <DirectorDeskList
+              items={desk.audienceSignals}
+              emptyTitle="No audience signal is waiting."
+              emptyBody="Publish work and log audience response to learn what the public responds to."
+              navigate={navigate}
+            />
           </article>
 
-          <article className="settings-preview command-upcoming">
-            <div className="section-heading"><h2>Upcoming</h2></div>
-            <dl>
-              <div>
-                <dt>Scheduled activities today</dt>
-                <dd>{pluralize(scheduledToday, "scheduled activity", "scheduled activities")}</dd>
-              </div>
-              <div>
-                <dt>Next publishing window</dt>
-                <dd>{nextWindow}</dd>
-              </div>
-            </dl>
-            <button type="button" onClick={() => navigate("/calendar")}>Open schedule</button>
+          <article className="settings-preview director-publishing">
+            <div className="section-heading">
+              <h2>Publishing Follow-up</h2>
+              <button type="button" onClick={() => navigate("/calendar")}>Open Publishing</button>
+            </div>
+            <DirectorDeskList
+              items={desk.publishingFollowUp}
+              emptyTitle="No publishing follow-up."
+              emptyBody="Approved packages and live posts will appear here when they need placement or response."
+              navigate={navigate}
+            />
           </article>
+
+          <details className="studio-ops-health">
+            <summary>
+              <span>{desk.studioOpsHealth.summary}</span>
+              <strong>{desk.studioOpsHealth.activeProductions ? `${desk.studioOpsHealth.activeProductions} active` : "Details"}</strong>
+            </summary>
+            <p>{desk.studioOpsHealth.detail}</p>
+            <dl>
+              <div><dt>API</dt><dd>{desk.studioOpsHealth.apiStatus}</dd></div>
+              <div><dt>Production setup</dt><dd>{desk.studioOpsHealth.engineStatus}</dd></div>
+              <div><dt>Schedule</dt><dd>{desk.studioOpsHealth.schedulerState}</dd></div>
+              <div><dt>Failed production</dt><dd>{pluralize(desk.studioOpsHealth.failedProductions, "item")}</dd></div>
+            </dl>
+            <button type="button" onClick={() => navigate("/settings")}>Open Studio Ops</button>
+          </details>
         </div>
       </section>
     </>
+  );
+}
+
+function DirectorDeskList({
+  items,
+  emptyTitle,
+  emptyBody,
+  navigate
+}: {
+  items: DirectorDeskItem[];
+  emptyTitle: string;
+  emptyBody: string;
+  navigate: (path: string) => void;
+}) {
+  if (items.length === 0) {
+    return <EmptyState title={emptyTitle} body={emptyBody} />;
+  }
+
+  return (
+    <div className="director-section-list">
+      {items.map((item) => (
+        <button className="director-section-row" key={item.id} type="button" onClick={() => navigate(item.path)}>
+          <span>
+            <strong>{item.title}</strong>
+            <small>{item.detail}</small>
+          </span>
+          <em>{item.count !== undefined ? item.count : item.actionLabel}</em>
+        </button>
+      ))}
+    </div>
   );
 }
 
@@ -1435,97 +3094,383 @@ function CreateModePage({
   error: string | null;
   navigate: (path: string) => void;
 }) {
-  const latestCharacter = data.characters[0] ?? null;
-  const readyRecipes = data.runs.filter((run) => run.type === "prompt_generation" && run.status === "completed").length;
-  const creativeRuns = data.runs.filter((run) => ["daily_activity", "prompt_generation", "image_generation", "draft_packaging"].includes(run.type));
-  const createActions = [
-    {
-      label: "Character",
-      value: data.characters.length,
-      detail: latestCharacter ? `Continue ${displayModelName(latestCharacter.name)}` : "Create the first profile",
-      action: "Open Talent",
-      path: latestCharacter ? `/characters/${latestCharacter.id}` : "/talent"
-    },
-    {
-      label: "Content run",
-      value: creativeRuns.length,
-      detail: "Start from an activity, brief, or prompt recipe",
-      action: "Open Prompt Studio",
-      path: "/prompt-studio"
-    },
-    {
-      label: "Asset",
-      value: readyRecipes,
-      detail: "Generate from a saved recipe",
-      action: "Open generation",
-      path: "/library"
-    },
-    {
-      label: "Automation",
-      value: data.automationStatus?.schedulerEnabled ? "On" : "Off",
-      detail: "Use supervised local automation",
-      action: "Open settings",
-      path: "/settings"
+  const [selectedCharacterId, setSelectedCharacterId] = useState("");
+  const [localCharacter, setLocalCharacter] = useState<CharacterDetail | null>(null);
+  const [localBirthRun, setLocalBirthRun] = useState<RunSummary | null>(null);
+  const [pendingAction, setPendingAction] = useState<string | null>(null);
+  const [formError, setFormError] = useState<string | null>(null);
+  const [message, setMessage] = useState<string | null>(null);
+  const [name, setName] = useState("");
+  const [marketOpportunity, setMarketOpportunity] = useState("");
+  const [audiencePlatform, setAudiencePlatform] = useState("");
+  const [differentiator, setDifferentiator] = useState("");
+  const [publicArchetype, setPublicArchetype] = useState("");
+  const [emotionalTone, setEmotionalTone] = useState("");
+  const [lifeTexture, setLifeTexture] = useState("");
+  const [uniquenessHook, setUniquenessHook] = useState("");
+  const [initialSummary, setInitialSummary] = useState("");
+  const [visualIdentity, setVisualIdentity] = useState("");
+  const [styleLanguage, setStyleLanguage] = useState("");
+  const [referenceConstraints, setReferenceConstraints] = useState("");
+  const [avoidNotes, setAvoidNotes] = useState("");
+  const [consistencyNotes, setConsistencyNotes] = useState("");
+  const [voiceGuide, setVoiceGuide] = useState("");
+  const [emotionalDepth, setEmotionalDepth] = useState("");
+  const [recurringTensions, setRecurringTensions] = useState("");
+  const [values, setValues] = useState("");
+  const [publicPrivateContrast, setPublicPrivateContrast] = useState("");
+  const [primaryPlatform, setPrimaryPlatform] = useState("Instagram");
+  const [secondaryPlatforms, setSecondaryPlatforms] = useState("");
+  const [contentStrengths, setContentStrengths] = useState("");
+  const [publicAppeal, setPublicAppeal] = useState("");
+  const [portfolioTest, setPortfolioTest] = useState("");
+  const [driftRisk, setDriftRisk] = useState("");
+  const platformOptions = ["Instagram", "TikTok", "Threads", "YouTube", "X", "Blog"];
+  const scopedCharacters = useMemo(() => {
+    if (!localCharacter) return data.characters;
+    const withoutLocal = data.characters.filter((character) => character.id !== localCharacter.id);
+    return [localCharacter, ...withoutLocal];
+  }, [data.characters, localCharacter]);
+  const selectedCharacter =
+    scopedCharacters.find((character) => character.id === selectedCharacterId) ??
+    scopedCharacters[0] ??
+    null;
+  const selectedRuns = useMemo(() => {
+    if (!selectedCharacter) return [];
+    const runs = data.runs.filter((run) => run.character_id === selectedCharacter.id);
+    if (localBirthRun?.character_id === selectedCharacter.id && !runs.some((run) => run.id === localBirthRun.id)) {
+      return [localBirthRun, ...runs];
     }
-  ];
+    return runs;
+  }, [data.runs, localBirthRun, selectedCharacter]);
+  const dossier = selectedCharacter ? buildNewFaceDossier(selectedCharacter, selectedRuns) : null;
+  const birthRuns = data.runs.filter((run) => run.type === "character_birth");
+  const birthReviewCount = birthRuns.filter((run) => run.status === "needs_review").length + (localBirthRun?.status === "needs_review" ? 1 : 0);
+  const approvedNewFaces = scopedCharacters.filter((character) => character.status.toLowerCase().includes("approved")).length;
+  const intakeReady = Boolean(name.trim() && (marketOpportunity.trim() || initialSummary.trim() || uniquenessHook.trim()));
+  const latestBirthRun = dossier?.latestBirthRun ?? null;
+
+  useEffect(() => {
+    if (selectedCharacterId && scopedCharacters.some((character) => character.id === selectedCharacterId)) {
+      return;
+    }
+    setSelectedCharacterId(scopedCharacters[0]?.id ?? "");
+  }, [scopedCharacters, selectedCharacterId]);
+
+  async function createNewFace() {
+    if (!name.trim()) return;
+    setPendingAction("create");
+    setFormError(null);
+    setMessage(null);
+    try {
+      const summary = [
+        initialSummary.trim(),
+        marketOpportunity.trim() ? `Market opportunity: ${marketOpportunity.trim()}` : "",
+        differentiator.trim() ? `Different from roster: ${differentiator.trim()}` : "",
+        uniquenessHook.trim() ? `Hook: ${uniquenessHook.trim()}` : ""
+      ].filter(Boolean).join("\n\n");
+      const created = await postJson<{ character: CharacterDetail }>("/api/characters", {
+        name,
+        summary: summary || null,
+        status: "idea"
+      });
+      let character = created.character;
+      const saveDetail = async (path: string, body: unknown) => {
+        const payload = await postJson<{ character?: CharacterDetail }>(path, body);
+        if (payload.character) {
+          character = payload.character;
+        }
+      };
+      const constitutionBody = labeledLines([
+        ["Public archetype", publicArchetype],
+        ["Emotional tone", emotionalTone],
+        ["Life texture", lifeTexture],
+        ["Uniqueness hook", uniquenessHook],
+        ["Initial summary", initialSummary],
+        ["Market opportunity", marketOpportunity],
+        ["Audience or platform", audiencePlatform],
+        ["Different from existing talent", differentiator],
+        ["First portfolio test", portfolioTest],
+        ["Identity drift risk", driftRisk]
+      ]);
+      if (constitutionBody) {
+        await saveDetail(`/api/characters/${character.id}/constitutions`, {
+          body: constitutionBody,
+          changeReason: "Initial scouting intake.",
+          markActive: true
+        });
+      }
+      const appearanceBody = labeledLines([
+        ["Visual identity", visualIdentity],
+        ["Style language", styleLanguage],
+        ["Reference constraints", referenceConstraints],
+        ["Avoid", avoidNotes],
+        ["Identity consistency notes", consistencyNotes]
+      ]);
+      if (appearanceBody) {
+        await saveDetail(`/api/characters/${character.id}/appearance`, { body: appearanceBody });
+      }
+      const voiceBody = labeledLines([
+        ["Voice guide", voiceGuide],
+        ["Emotional depth", emotionalDepth],
+        ["Recurring tensions", recurringTensions],
+        ["Values", values],
+        ["Public/private contrast", publicPrivateContrast]
+      ]);
+      if (voiceBody) {
+        await saveDetail(`/api/characters/${character.id}/voice`, { body: voiceBody });
+      }
+      const personaBody = labeledLines([
+        ["Primary platform", primaryPlatform],
+        ["Secondary platforms", secondaryPlatforms],
+        ["Content strengths", contentStrengths],
+        ["Public appeal hypothesis", publicAppeal]
+      ]);
+      if (personaBody) {
+        await saveDetail(`/api/characters/${character.id}/personas`, { platform: primaryPlatform, body: personaBody });
+      }
+      setLocalCharacter(character);
+      setSelectedCharacterId(character.id);
+      setLocalBirthRun(null);
+      setMessage("New Face Dossier created. The director can approve, revise, reject, or run Birth Dossier review.");
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : "Unable to scout New Face.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function startBirthDossier() {
+    if (!selectedCharacter) return;
+    setPendingAction("birth");
+    setFormError(null);
+    setMessage(null);
+    try {
+      const payload = await postJson<RunDetailPayload>(`/api/characters/${selectedCharacter.id}/birth-run`, {});
+      setLocalBirthRun(payload.run);
+      setMessage("Birth Dossier is ready for director review. The Production Log is available as the secondary trace.");
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : "Unable to run Birth Dossier.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
+
+  async function decideNewFace(status: "approved" | "needs_revision" | "rejected") {
+    if (!selectedCharacter) return;
+    setPendingAction(status);
+    setFormError(null);
+    setMessage(null);
+    try {
+      const payload = await patchJson<{ character: CharacterDetail }>(`/api/characters/${selectedCharacter.id}`, { status });
+      setLocalCharacter(payload.character);
+      setSelectedCharacterId(payload.character.id);
+      setMessage(status === "approved" ? "New Face approved for development." : status === "rejected" ? "Concept rejected." : "Identity marked for revision.");
+    } catch (caught) {
+      setFormError(caught instanceof Error ? caught.message : "Unable to save director decision.");
+    } finally {
+      setPendingAction(null);
+    }
+  }
 
   return (
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Create mode</span>
-          <h1>Create</h1>
-          <p>Start a character, campaign idea, asset, post package, or supervised creative workflow.</p>
+          <span className="eyebrow">New faces</span>
+          <h1>Scouting</h1>
+          <p>Evaluate a new identity before adding it to the agency roster.</p>
         </div>
       </header>
 
-      {loading && <div className="notice">Loading creation context.</div>}
+      {loading && <div className="notice">Loading scouting context.</div>}
       {error && <div className="notice error">{error}</div>}
+      {formError && <div className="notice error">{formError}</div>}
+      {message && <div className="notice">{message}</div>}
       <StageHandoff data={data} stageId="birth" navigate={navigate} />
 
-      <section className="panel-grid heartbeat-grid" aria-label="Create work starters">
-        {createActions.map((action) => (
-          <button className="status-panel" key={action.label} type="button" onClick={() => navigate(action.path)}>
-            <span>{action.label}</span>
-            <strong>{action.value}</strong>
-            <p>{action.detail}</p>
-            <small>{action.action}</small>
-          </button>
-        ))}
+      <section className="scouting-command" aria-label="Scouting overview">
+        <article>
+          <span>New Face Intake</span>
+          <strong>{scopedCharacters.length}</strong>
+          <p>{scopedCharacters.length === 1 ? "identity in scouting" : "identities in scouting"}</p>
+        </article>
+        <article>
+          <span>Birth Dossiers</span>
+          <strong>{birthRuns.length + (localBirthRun ? 1 : 0)}</strong>
+          <p>{birthReviewCount ? `${birthReviewCount} need director decision` : "production logs linked"}</p>
+        </article>
+        <article>
+          <span>Approved</span>
+          <strong>{approvedNewFaces}</strong>
+          <p>ready for development</p>
+        </article>
+        <button className="primary-action" type="button" onClick={() => navigate("/talent")}>Open Roster</button>
       </section>
 
-      <section className="content-grid">
-        <article className="machine-room">
+      <section className="scouting-workbench">
+        <article className="machine-room new-face-intake">
           <div className="section-heading">
-            <h2>Recent creation work</h2>
-            <button type="button" onClick={() => navigate("/runs")}>View activity</button>
+            <h2>Guided Intake</h2>
+            <span>{intakeReady ? "Ready" : "Draft"}</span>
           </div>
-          {creativeRuns.length === 0 ? (
-            <EmptyState title="No creative activity yet" body="Create a character, then start a content workflow from Prompt Studio." />
-          ) : (
-            <div className="run-stack">
-              {creativeRuns.slice(0, 6).map((run) => (
-                <button className="run-row" key={run.id} onClick={() => navigate(`/runs/${run.id}`)} type="button">
-                  <span>
-                    <strong>{run.title}</strong>
-                    <small>{runTypeLabel(run.type)} · {formatDate(run.updated_at)}</small>
-                  </span>
-                  <em className={statusClass(run.status)}>{statusLabel(run.status)}</em>
-                </button>
-              ))}
-            </div>
-          )}
+          <div className="scouting-stepper" aria-label="New Face Intake steps">
+            {["Market Opportunity", "Identity Seed", "Look Direction", "Voice and Inner Life", "Platform Fit", "First Portfolio Test", "New Face Dossier"].map((step, index) => (
+              <span key={step}><b>{index + 1}</b>{step}</span>
+            ))}
+          </div>
+          <div className="form-stack scouting-form">
+            <fieldset>
+              <legend>Market Opportunity</legend>
+              <label>What kind of talent is missing?<textarea value={marketOpportunity} onChange={(event) => setMarketOpportunity(event.target.value)} /></label>
+              <label>Audience or platform<input value={audiencePlatform} onChange={(event) => setAudiencePlatform(event.target.value)} /></label>
+              <label>What makes this identity different?<textarea value={differentiator} onChange={(event) => setDifferentiator(event.target.value)} /></label>
+            </fieldset>
+            <fieldset>
+              <legend>Identity Seed</legend>
+              <label>Name<input value={name} onChange={(event) => setName(event.target.value)} placeholder="New Face name" /></label>
+              <label>Public archetype<input value={publicArchetype} onChange={(event) => setPublicArchetype(event.target.value)} /></label>
+              <label>Emotional tone<input value={emotionalTone} onChange={(event) => setEmotionalTone(event.target.value)} /></label>
+              <label>Life texture<input value={lifeTexture} onChange={(event) => setLifeTexture(event.target.value)} /></label>
+              <label>Uniqueness hook<input value={uniquenessHook} onChange={(event) => setUniquenessHook(event.target.value)} /></label>
+              <label>Initial summary<textarea value={initialSummary} onChange={(event) => setInitialSummary(event.target.value)} /></label>
+            </fieldset>
+            <fieldset>
+              <legend>Look Direction</legend>
+              <label>Visual identity<textarea value={visualIdentity} onChange={(event) => setVisualIdentity(event.target.value)} /></label>
+              <label>Style language<input value={styleLanguage} onChange={(event) => setStyleLanguage(event.target.value)} /></label>
+              <label>Reference constraints<textarea value={referenceConstraints} onChange={(event) => setReferenceConstraints(event.target.value)} /></label>
+              <label>What to avoid<textarea value={avoidNotes} onChange={(event) => setAvoidNotes(event.target.value)} /></label>
+              <label>Identity consistency notes<textarea value={consistencyNotes} onChange={(event) => setConsistencyNotes(event.target.value)} /></label>
+            </fieldset>
+            <fieldset>
+              <legend>Voice and Inner Life</legend>
+              <label>Voice guide<textarea value={voiceGuide} onChange={(event) => setVoiceGuide(event.target.value)} /></label>
+              <label>Emotional depth<textarea value={emotionalDepth} onChange={(event) => setEmotionalDepth(event.target.value)} /></label>
+              <label>Recurring tensions<textarea value={recurringTensions} onChange={(event) => setRecurringTensions(event.target.value)} /></label>
+              <label>Values<input value={values} onChange={(event) => setValues(event.target.value)} /></label>
+              <label>Public/private contrast<textarea value={publicPrivateContrast} onChange={(event) => setPublicPrivateContrast(event.target.value)} /></label>
+            </fieldset>
+            <fieldset>
+              <legend>Platform Fit</legend>
+              <label>Primary platform<select value={primaryPlatform} onChange={(event) => setPrimaryPlatform(event.target.value)}>{platformOptions.map((platform) => <option key={platform} value={platform}>{platform}</option>)}</select></label>
+              <label>Secondary platforms<input value={secondaryPlatforms} onChange={(event) => setSecondaryPlatforms(event.target.value)} /></label>
+              <label>Content strengths<textarea value={contentStrengths} onChange={(event) => setContentStrengths(event.target.value)} /></label>
+              <label>Public appeal hypothesis<textarea value={publicAppeal} onChange={(event) => setPublicAppeal(event.target.value)} /></label>
+            </fieldset>
+            <fieldset>
+              <legend>First Portfolio Test</legend>
+              <label>Recommended test<textarea value={portfolioTest} onChange={(event) => setPortfolioTest(event.target.value)} /></label>
+              <label>Identity drift risk<textarea value={driftRisk} onChange={(event) => setDriftRisk(event.target.value)} /></label>
+            </fieldset>
+            <button className="primary-action" type="button" onClick={createNewFace} disabled={pendingAction !== null || !intakeReady}>
+              {pendingAction === "create" ? "Creating Dossier" : "Create New Face Dossier"}
+            </button>
+          </div>
         </article>
 
-        <article className="settings-preview">
-          <div className="section-heading"><h2>Create from</h2></div>
-          <dl>
-            <div><dt>Identity</dt><dd>Characters, references, voice, canon</dd></div>
-            <div><dt>Intent</dt><dd>Activities, briefs, prompt recipes</dd></div>
-            <div><dt>Machine</dt><dd>Generation, analysis, packaging runs</dd></div>
-          </dl>
-        </article>
+        <div className="command-side-stack scouting-side">
+          <article className="settings-preview scouting-candidates">
+            <div className="section-heading">
+              <h2>New Face Candidates</h2>
+              <span>{scopedCharacters.length}</span>
+            </div>
+            {scopedCharacters.length === 0 ? (
+              <EmptyState title="No New Face candidates yet" body="Use intake to scout the first identity." />
+            ) : (
+              <div className="director-section-list">
+                {scopedCharacters.slice(0, 8).map((character) => {
+                  const candidateDossier = buildNewFaceDossier(character, character.id === selectedCharacter?.id ? selectedRuns : data.runs);
+                  return (
+                    <button
+                      className={`director-section-row${selectedCharacter?.id === character.id ? " is-selected" : ""}`}
+                      key={character.id}
+                      type="button"
+                      onClick={() => setSelectedCharacterId(character.id)}
+                    >
+                      <span>
+                        <strong>{candidateDossier.displayName}</strong>
+                        <small>{candidateDossier.publicPromise}</small>
+                      </span>
+                      <em>{candidateDossier.directorDecision}</em>
+                    </button>
+                  );
+                })}
+              </div>
+            )}
+          </article>
+
+          <article className="settings-preview new-face-dossier">
+            <div className="section-heading">
+              <h2>New Face Dossier</h2>
+              {dossier && <span>{dossier.stageLabel}</span>}
+            </div>
+            {dossier ? (
+              <>
+                <div className="dossier-hero">
+                  <div className="casting-mark"><span>{modelInitials(dossier.displayName)}</span></div>
+                  <div>
+                    <span className="eyebrow">Director review</span>
+                    <h2>{dossier.displayName}</h2>
+                    <p>{dossier.publicPromise}</p>
+                  </div>
+                </div>
+                <dl className="new-face-fields">
+                  <div><dt>Name</dt><dd>{dossier.displayName}</dd></div>
+                  <div><dt>Stage</dt><dd>{dossier.stageLabel}</dd></div>
+                  <div><dt>Public promise</dt><dd>{dossier.publicPromise}</dd></div>
+                  <div><dt>Visual direction</dt><dd>{dossier.visualDirection}</dd></div>
+                  <div><dt>Voice/interiority</dt><dd>{dossier.voiceInteriority}</dd></div>
+                  <div><dt>Best initial platform</dt><dd>{dossier.bestInitialPlatform}</dd></div>
+                  <div><dt>Development risk</dt><dd>{dossier.developmentRisk}</dd></div>
+                  <div><dt>Recommended first booking</dt><dd>{dossier.recommendedFirstBooking}</dd></div>
+                </dl>
+                <div className="director-decision-panel">
+                  <span>Director decision</span>
+                  <strong>{dossier.directorDecision}</strong>
+                  <div className="review-command-actions">
+                    <button className="primary-action" type="button" onClick={() => decideNewFace("approved")} disabled={pendingAction !== null}>Approve New Face</button>
+                    <button type="button" onClick={() => decideNewFace("needs_revision")} disabled={pendingAction !== null}>Revise Identity</button>
+                    <button type="button" onClick={() => decideNewFace("rejected")} disabled={pendingAction !== null}>Reject Concept</button>
+                  </div>
+                </div>
+                <details className="production-log-link">
+                  <summary><span>Birth Dossier</span><strong>{latestBirthRun ? statusLabel(latestBirthRun.status) : "Not run"}</strong></summary>
+                  <p>{latestBirthRun ? "Birth output is available for traceability while the dossier remains the primary review surface." : "Run Birth Dossier when the identity promise is ready for a director check."}</p>
+                  <div className="review-command-actions">
+                    <button className="primary-action" type="button" onClick={startBirthDossier} disabled={pendingAction !== null || !selectedCharacter}>
+                      {pendingAction === "birth" ? "Running Birth Dossier" : latestBirthRun ? "Run Birth Dossier Again" : "Run Birth Dossier"}
+                    </button>
+                    <button type="button" onClick={() => navigate(dossier.productionLogPath ?? "/runs?status=needs_review")} disabled={!dossier.productionLogPath}>
+                      View Production Log
+                    </button>
+                  </div>
+                </details>
+              </>
+            ) : (
+              <EmptyState title="No dossier selected" body="Scout or select a New Face to review." />
+            )}
+          </article>
+        </div>
       </section>
+
+      {dossier && (
+        <section className="machine-room dossier-step-review">
+          <div className="section-heading">
+            <h2>Scouting Review</h2>
+            <button type="button" onClick={() => navigate(dossier.productionLogPath ?? "/runs")}>Open Production Logs</button>
+          </div>
+          <div className="dossier-step-grid">
+            {dossier.steps.map((step) => (
+              <article key={step.id} className={`dossier-step-card is-${step.status}`}>
+                <span>{step.label}</span>
+                <strong>{step.status === "ready" ? "Ready" : step.status === "review" ? "Review" : "Needs input"}</strong>
+                <p>{step.detail}</p>
+              </article>
+            ))}
+          </div>
+        </section>
+      )}
     </>
   );
 }
@@ -1598,19 +3543,19 @@ function RunsPage({
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Debug</span>
-          <h1>Debug Runs</h1>
+          <span className="eyebrow">Studio Ops</span>
+          <h1>Production Logs</h1>
         </div>
       </header>
 
-      {loading && <div className="notice">Loading debug runs.</div>}
+      {loading && <div className="notice">Loading production logs.</div>}
       {error && <div className="notice error">{error}</div>}
 
       <section className="timeline-control-layout" aria-label="Timeline control desk">
         <div className="timeline-main-column">
           <section className="timeline-desk">
             <article className="route-matrix-panel">
-              <div className="section-heading"><h2>Run matrix</h2></div>
+              <div className="section-heading"><h2>Production matrix</h2></div>
               <table className="route-matrix timeline-matrix">
                 <thead>
                   <tr>
@@ -1635,14 +3580,14 @@ function RunsPage({
             </article>
             <article className="desk-overview-panel">
               <div className="section-heading"><h2>Signal</h2></div>
-              <div className="desk-stat-row" aria-label="Run desk summary">
+              <div className="desk-stat-row" aria-label="Production log summary">
                 <span><strong>{activeRun ? 1 : 0}</strong><small>Active</small></span>
                 <span><strong>{data.runs.filter((run) => run.status === "needs_review").length}</strong><small>Review</small></span>
                 <span className="alert"><strong>{actionRequiredCount}</strong><small>Action</small></span>
               </div>
               <dl className="desk-next-window">
                 <div>
-                  <dt>Current trace</dt>
+                  <dt>Current log</dt>
                   <dd>{selectedRun ? shortRunId(selectedRun.id) : "None"}</dd>
                 </div>
                 <div>
@@ -1653,9 +3598,9 @@ function RunsPage({
             </article>
             <article className="run-dossier-panel timeline-focus-panel">
               <div className="dossier-heading">
-                <span>Run dossier</span>
+                <span>Production dossier</span>
               </div>
-              {!selectedRun ? <EmptyState title="No debug run selected" body="Automation traces appear here after work starts." /> : (
+              {!selectedRun ? <EmptyState title="No production log selected" body="Studio traces appear here after work starts." /> : (
                 <div className="run-dossier">
                   <div className="dossier-platform-row">
                     <span className="platform-mark platform-mark-system"><ClockCounterClockwise aria-hidden="true" size={16} weight="regular" /></span>
@@ -1665,13 +3610,13 @@ function RunsPage({
                   <h2>{selectedRun.title}</h2>
                   <p>{currentStep(selectedRun)}</p>
                   <dl className="profile-facts run-facts">
-                    <div><dt>Run</dt><dd>{shortRunId(selectedRun.id)}</dd></div>
-                    <div><dt>Character</dt><dd>{selectedCharacter?.name ?? "Unassigned"}</dd></div>
+                    <div><dt>Log</dt><dd>{shortRunId(selectedRun.id)}</dd></div>
+                    <div><dt>Talent</dt><dd>{selectedCharacter?.name ?? "Unassigned"}</dd></div>
                     <div><dt>Started</dt><dd>{formatDate(selectedRun.created_at)}</dd></div>
                     <div><dt>Status</dt><dd>{statusLabel(selectedRun.status)}</dd></div>
                   </dl>
                   <div className="draft-primary-actions dossier-actions">
-                    <button className="primary-action" type="button" onClick={() => navigate(`/runs/${selectedRun.id}`)}>Open trace</button>
+                    <button className="primary-action" type="button" onClick={() => navigate(`/runs/${selectedRun.id}`)}>Open Production Log</button>
                     {selectedRun.character_id && <button type="button" onClick={() => navigate(`/characters/${selectedRun.character_id}`)}>Open dossier</button>}
                   </div>
                 </div>
@@ -1679,7 +3624,7 @@ function RunsPage({
             </article>
           </section>
 
-          <section className="run-lane" aria-label="Run status filters">
+          <section className="run-lane" aria-label="Production log status filters">
             {runQuickFilters.map((item) => {
               const count = item.value === "all" ? data.runs.length : data.runs.filter((run) => runMatchesStatus(run, item.value)).length;
               return (
@@ -1691,7 +3636,7 @@ function RunsPage({
             })}
           </section>
 
-          <section className="filters" aria-label="Run filters">
+          <section className="filters" aria-label="Production log filters">
             <div className="filter-summary" aria-live="polite">
               <strong>{filteredRuns.length}</strong>
               <span>{runFilterLabel(statusFilter)} · {typeFilter === "all" ? "all types" : runTypeLabel(typeFilter)}</span>
@@ -1728,11 +3673,11 @@ function RunsPage({
 
           {filteredRuns.length === 0 ? (
             <section className="table-panel">
-              <EmptyState title="No matching runs" body="Clear filters or create a new run from Operations." />
+              <EmptyState title="No matching production logs" body="Clear filters or start new work from Studio Ops." />
             </section>
           ) : (
             <>
-              <section className="run-card-list" aria-label="Filtered runs">
+              <section className="run-card-list" aria-label="Filtered production logs">
                 {queueRuns.map((run) => {
                   const character = data.characters.find((item) => item.id === run.character_id);
                   return (
@@ -1759,10 +3704,10 @@ function RunsPage({
                   </colgroup>
                   <thead>
                     <tr>
-                      <th>Run</th>
+                      <th>Production</th>
                       <th>Type</th>
                       <th>State</th>
-                      <th>Character</th>
+                      <th>Talent</th>
                       <th>Current step</th>
                       <th>Started</th>
                     </tr>
@@ -1774,7 +3719,7 @@ function RunsPage({
                         <tr key={run.id} onClick={() => navigate(`/runs/${run.id}`)}>
                           <td>
                             <strong>{run.title}</strong>
-                            <small>run {shortRunId(run.id)}</small>
+                            <small>log {shortRunId(run.id)}</small>
                           </td>
                           <td>{runTypeLabel(run.type)}</td>
                           <td>
@@ -1791,7 +3736,7 @@ function RunsPage({
               </section>
               {hiddenRunCount > 0 && (
                 <div className="run-queue-footer">
-                  <span>{hiddenRunCount} older runs hidden</span>
+                  <span>{hiddenRunCount} older logs hidden</span>
                   <button type="button" onClick={() => setShowFullRunQueue(true)}>Show full history</button>
                 </div>
               )}
@@ -1847,7 +3792,7 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
   }, [runId]);
 
   if (loading) {
-    return <div className="notice">Loading run timeline.</div>;
+    return <div className="notice">Loading production log.</div>;
   }
 
   if (error || !detail) {
@@ -1855,7 +3800,7 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
       <div className="notice error">
         {error ?? "Run not found."}
         <button type="button" onClick={() => navigate("/runs")}>
-          Back to debug runs
+          Back to production logs
         </button>
       </div>
     );
@@ -1876,22 +3821,23 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
       <header className="topbar page-heading">
         <div>
           <button className="text-button" type="button" onClick={() => navigate("/runs")}>
-            Back to debug runs
+            Back to production logs
           </button>
-          <span className="eyebrow">Debug run</span>
-          <h1>{run.title}</h1>
+          <span className="eyebrow">Studio Ops</span>
+          <h1>Production Log</h1>
+          <p>{run.title}</p>
         </div>
         <em className={statusClass(run.status)}>{run.status.replaceAll("_", " ")}</em>
       </header>
 
-      <section className="run-command" aria-label="Run command">
+      <section className="run-command" aria-label="Production log summary">
         <article className="run-hero">
           <span>{runTypeLabel(run.type)}</span>
-          <h2>{statusLabel(run.status)}</h2>
+          <h2>What happened behind the scenes?</h2>
           <p>{currentStep(run, events)}</p>
           <div className="button-stack">
-            {run.character_id && <button type="button" onClick={() => navigate(`/characters/${run.character_id}`)}>Character</button>}
-            <button type="button" onClick={() => navigate("/runs")}>All debug runs</button>
+            <button type="button" onClick={() => navigate("/runs")}>All Production Logs</button>
+            {run.character_id && <button type="button" onClick={() => navigate(`/characters/${run.character_id}`)}>Talent Profile</button>}
           </div>
         </article>
         <div className="run-stat-grid">
@@ -1910,10 +3856,10 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
       <section className="detail-grid">
         <article className="machine-room">
           <div className="section-heading">
-            <h2>Progress Timeline</h2>
+            <h2>Production Log</h2>
           </div>
           {events.length === 0 ? (
-            <EmptyState title="No events" body="This run has not emitted machine events yet." />
+            <EmptyState title="No entries" body="This production job has not emitted staff notes yet." />
           ) : (
             <ol className="timeline">
               {events.map((event) => (
@@ -1930,7 +3876,7 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
           )}
           {events.length > 0 && (
             <details className="raw-details run-audit-drawer">
-              <summary>Audit payloads</summary>
+              <summary>Technical audit</summary>
               <pre>
                 {JSON.stringify(
                   events.map((event) => ({
@@ -1949,7 +3895,7 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
 
         <aside className="side-stack">
           <article className="settings-preview next-action-panel">
-            <div className="section-heading"><h2>Next Action</h2></div>
+            <div className="section-heading"><h2>Machine State</h2></div>
             <p className="action-copy">{nextAction(run)}</p>
           </article>
 
@@ -1974,10 +3920,10 @@ function RunDetailPage({ runId, navigate }: { runId: string; navigate: (path: st
 
           <article className="settings-preview">
             <div className="section-heading">
-              <h2>Provider Jobs</h2>
+              <h2>Production Engine Logs</h2>
             </div>
             {!detail.providerJobs?.length ? (
-              <EmptyState title="No provider jobs" body="Provider calls will appear here after generation or analysis runs." />
+              <EmptyState title="No engine calls" body="Production engine calls will appear here after generation or analysis jobs." />
             ) : (
               <div className="compact-list">
                 {detail.providerJobs.map((job) => (
@@ -2028,37 +3974,29 @@ function CharactersPage({
   const [name, setName] = useState("");
   const [summary, setSummary] = useState("");
   const [query, setQuery] = useState("");
-  const [statusFilter, setStatusFilter] = useState("all");
+  const [laneFilter, setLaneFilter] = useState<"all" | TalentStageId>("all");
   const [selectedCharacterId, setSelectedCharacterId] = useState(() => readCharacterRouteState().selected);
   const [formError, setFormError] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
   const normalizedQuery = query.trim().toLowerCase();
-  const statusCounts = useMemo(() => {
-    const counts = new Map<string, number>();
-    data.characters.forEach((character) => {
-      counts.set(character.status, (counts.get(character.status) ?? 0) + 1);
-    });
-    return counts;
-  }, [data.characters]);
-  const statusLanes = useMemo(
-    () => [
-      { id: "all", label: "All", count: data.characters.length },
-      ...Array.from(statusCounts.entries())
-        .sort(([left], [right]) => left.localeCompare(right))
-        .map(([status, count]) => ({ id: status, label: statusLabel(status), count }))
-    ],
-    [data.characters.length, statusCounts]
+  const rosterLanes = useMemo(() => buildRosterLanes(data.characters, data.runs), [data.characters, data.runs]);
+  const careerSummaries = useMemo(
+    () => new Map(rosterLanes.flatMap((lane) => lane.talent).map((career) => [career.talentId, career])),
+    [rosterLanes]
   );
   const filteredCharacters = useMemo(
     () =>
       data.characters.filter((character) => {
-        const matchesStatus = statusFilter === "all" || character.status === statusFilter;
+        const career = careerSummaries.get(character.id);
+        const matchesLane = laneFilter === "all" || career?.stage === laneFilter;
         const matchesQuery =
           !normalizedQuery ||
-          [character.name, character.summary ?? "", character.status].some((value) => value.toLowerCase().includes(normalizedQuery));
-        return matchesStatus && matchesQuery;
+          [character.name, character.summary ?? "", career?.shortPositioning ?? "", career ? talentStageLabel(career.stage) : ""].some((value) =>
+            value.toLowerCase().includes(normalizedQuery)
+          );
+        return matchesLane && matchesQuery;
       }),
-    [data.characters, normalizedQuery, statusFilter]
+    [careerSummaries, data.characters, laneFilter, normalizedQuery]
   );
   const selectedCharacter =
     filteredCharacters.find((character) => character.id === selectedCharacterId) ??
@@ -2066,11 +4004,15 @@ function CharactersPage({
     filteredCharacters[0] ??
     data.characters[0] ??
     null;
+  const selectedCareer = selectedCharacter ? careerSummaries.get(selectedCharacter.id) ?? buildTalentCareerSummary(selectedCharacter, data.runs) : null;
   const selectedRun = selectedCharacter ? data.runs.find((run) => run.character_id === selectedCharacter.id) ?? null : null;
   const activeRunCount = data.runs.filter(
     (run) => run.character_id && !["completed", "failed", "cancelled"].includes(run.status)
   ).length;
   const reviewRunCount = data.runs.filter((run) => run.status === "needs_review" && run.character_id).length;
+  const pushTalentCount = rosterLanes
+    .filter((lane) => ["star_talent", "core_talent", "rising_talent"].includes(lane.id))
+    .reduce((total, lane) => total + lane.talent.length, 0);
 
   useEffect(() => {
     if (selectedCharacterId && data.characters.some((character) => character.id === selectedCharacterId)) {
@@ -2110,47 +4052,48 @@ function CharactersPage({
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Talent desk</span>
-          <h1>Talent</h1>
+          <span className="eyebrow">Represented talent</span>
+          <h1>Roster</h1>
         </div>
       </header>
 
-      {loading && <div className="notice">Loading characters.</div>}
+      {loading && <div className="notice">Loading roster.</div>}
       {error && <div className="notice error">{error}</div>}
       <StageHandoff data={data} stageId="birth" navigate={navigate} />
 
       <section className="roster-command roster-command--casting" aria-label="Talent roster command">
         <article>
-          <span>Talent</span>
+          <span>Represented</span>
           <strong>{data.characters.length}</strong>
-          <p>profiles</p>
+          <p>talent</p>
         </article>
         <article>
-          <span>Active work</span>
-          <strong>{activeRunCount}</strong>
-          <p>in progress</p>
+          <span>Push list</span>
+          <strong>{pushTalentCount}</strong>
+          <p>rising or core</p>
         </article>
         <article>
-          <span>Review</span>
+          <span>Decisions</span>
           <strong>{reviewRunCount}</strong>
-          <p>gates</p>
+          <p>{activeRunCount ? `${activeRunCount} active bookings` : "no active bookings"}</p>
         </article>
         <label className="roster-search">
           <span>Search</span>
-          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, status, summary" />
+          <input type="search" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Name, stage, positioning" />
         </label>
       </section>
 
-      <section className="character-status-lanes" aria-label="Roster status">
-        {statusLanes.map((lane) => (
+      <section className="character-status-lanes roster-lane-filter" aria-label="Roster lanes">
+        {[{ id: "all" as const, label: "All", detail: "full agency roster", talent: data.characters }, ...rosterLanes].map((lane) => (
           <button
-            className={statusFilter === lane.id ? "active" : ""}
+            className={laneFilter === lane.id ? "active" : ""}
             key={lane.id}
             type="button"
-            onClick={() => setStatusFilter(lane.id)}
+            onClick={() => setLaneFilter(lane.id)}
           >
             <span>{lane.label}</span>
-            <strong>{lane.count}</strong>
+            <strong>{lane.talent.length}</strong>
+            <small>{"detail" in lane ? lane.detail : "all represented talent"}</small>
           </button>
         ))}
       </section>
@@ -2162,15 +4105,14 @@ function CharactersPage({
             <span>{filteredCharacters.length}</span>
           </div>
           {data.characters.length === 0 ? (
-            <EmptyState title="No characters yet" body="Create the first character to begin identity formation." />
+            <EmptyState title="No talent in the roster yet" body="Scout the first New Face to begin building the agency." />
           ) : filteredCharacters.length === 0 ? (
             <EmptyState title="No matches" body="Clear search to see the full roster." />
           ) : (
             <div className="character-grid">
               {filteredCharacters.map((character) => {
-                const lastRun = data.runs.find((run) => run.character_id === character.id);
                 const selected = selectedCharacter?.id === character.id;
-                const displayName = displayModelName(character.name);
+                const career = careerSummaries.get(character.id) ?? buildTalentCareerSummary(character, data.runs);
                 return (
                   <button
                     aria-pressed={selected}
@@ -2179,15 +4121,15 @@ function CharactersPage({
                     type="button"
                     onClick={() => {
                       setSelectedCharacterId(character.id);
-                      replaceRouteQuery("/characters", { selected: character.id });
+                      replaceRouteQuery("/talent", { selected: character.id });
                     }}
                   >
                     <div className="thumb">{modelInitials(character.name)}</div>
                     <div>
-                      <strong>{displayName}</strong>
-                      <em className={statusClass(character.status)}>{character.status.replaceAll("_", " ")}</em>
-                      <p>{character.summary ?? "No summary yet."}</p>
-                      <small>{lastRun ? lastRun.title : "No runs yet"}</small>
+                      <strong>{career.displayName}</strong>
+                      <em className="talent-stage-pill">{talentStageLabel(career.stage)}</em>
+                      <p>{career.shortPositioning}</p>
+                      <small>{career.bestPlatform} · {career.momentum} · {career.nextRecommendedMove}</small>
                     </div>
                   </button>
                 );
@@ -2199,58 +4141,60 @@ function CharactersPage({
         <aside className="settings-preview casting-panel">
           <div className="section-heading">
             <h2>Selected</h2>
-            {selectedCharacter && <span>{statusLabel(selectedCharacter.status)}</span>}
+            {selectedCareer && <span>{talentStageLabel(selectedCareer.stage)}</span>}
           </div>
-          {selectedCharacter ? (
+          {selectedCharacter && selectedCareer ? (
             <div className="casting-selected">
               <div className="casting-mark">
                 <span>{modelInitials(selectedCharacter.name)}</span>
               </div>
               <div>
-                <span className="eyebrow">Model file</span>
-                <h2>{displayModelName(selectedCharacter.name)}</h2>
-                <p>{selectedCharacter.summary ?? "No summary yet."}</p>
+                <span className="eyebrow">Talent file</span>
+                <h2>{selectedCareer.displayName}</h2>
+                <p>{selectedCareer.shortPositioning}</p>
               </div>
               <div className="casting-facts">
                 <div>
-                  <span>Status</span>
-                  <strong>{statusLabel(selectedCharacter.status)}</strong>
+                  <span>Stage</span>
+                  <strong>{talentStageLabel(selectedCareer.stage)}</strong>
                 </div>
                 <div>
-                  <span>Updated</span>
-                  <strong>{formatDate(selectedCharacter.updated_at)}</strong>
+                  <span>Priority</span>
+                  <strong>{agencyPriorityLabel(selectedCareer.agencyPriority)}</strong>
                 </div>
                 <div>
-                  <span>Latest run</span>
-                  <strong>{selectedRun ? statusLabel(selectedRun.status) : "None"}</strong>
+                  <span>Best platform</span>
+                  <strong>{selectedCareer.bestPlatform}</strong>
+                </div>
+                <div>
+                  <span>Momentum</span>
+                  <strong>{selectedCareer.momentum}</strong>
                 </div>
               </div>
-              {selectedRun && (
-                <button className="casting-run" type="button" onClick={() => navigate(`/runs/${selectedRun.id}`)}>
-                  <span>{runTypeLabel(selectedRun.type)}</span>
-                  <strong>{selectedRun.title}</strong>
-                  <small>{statusLabel(selectedRun.status)}</small>
-                </button>
-              )}
+              <button className="casting-run" type="button" onClick={() => navigate(`/characters/${selectedCharacter.id}`)}>
+                <span>Next recommended move</span>
+                <strong>{selectedCareer.nextRecommendedMove}</strong>
+                <small>{selectedCareer.latestAudienceSignal}</small>
+              </button>
               <div className="casting-actions">
                 <button className="primary-action" type="button" onClick={() => navigate(`/characters/${selectedCharacter.id}`)}>
-                  Open profile
+                  Open Talent Profile
                 </button>
-                <button className="text-button" type="button" onClick={() => navigate(runQuery("needs_review"))}>
-                  Review runs
+                <button className="text-button" type="button" onClick={() => navigate(selectedRun ? `/runs/${selectedRun.id}` : runQuery("needs_review"))}>
+                  Production Logs
                 </button>
               </div>
             </div>
           ) : (
-            <EmptyState title="No model selected" body="Create or select a character." />
+            <EmptyState title="No talent selected" body="Scout or select a represented identity." />
           )}
 
           <details className="editor-drawer roster-create" open={data.characters.length === 0}>
-            <summary>New character</summary>
+            <summary>Scout New Talent</summary>
             <div className="form-stack">
               <label>
                 Name
-                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Character name" />
+                <input value={name} onChange={(event) => setName(event.target.value)} placeholder="Talent name" />
               </label>
               <label>
                 Summary
@@ -2258,7 +4202,7 @@ function CharactersPage({
               </label>
               {formError && <div className="notice error">{formError}</div>}
               <button className="primary-action" type="button" onClick={createCharacter} disabled={creating || !name.trim()}>
-                {creating ? "Creating" : "Create character"}
+                {creating ? "Scouting" : "Scout New Talent"}
               </button>
             </div>
           </details>
@@ -2288,13 +4232,13 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
     try {
       const response = await fetch(`${apiBaseUrl()}/api/characters/${characterId}`);
       if (!response.ok) {
-        throw new Error(response.status === 404 ? "Character not found." : "Unable to load character.");
+        throw new Error(response.status === 404 ? "Talent not found." : "Unable to load talent profile.");
       }
       const payload = (await response.json()) as { character: CharacterDetail };
       setCharacter(payload.character);
       setError(null);
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to load character.");
+      setError(caught instanceof Error ? caught.message : "Unable to load talent profile.");
     } finally {
       setLoading(false);
     }
@@ -2365,28 +4309,44 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
   }
 
   if (loading) {
-    return <div className="notice">Loading character profile.</div>;
+    return <div className="notice">Loading talent profile.</div>;
   }
   if (error && !character) {
     return <div className="notice error">{error}</div>;
   }
   if (!character) {
-    return <div className="notice error">Character not found.</div>;
+    return <div className="notice error">Talent not found.</div>;
   }
 
   const activeConstitution = character.constitutions.find((item) => item.is_active === 1) ?? character.constitutions[0];
   const profileReference =
     character.referenceImages.find((item) => item.status === "approved") ?? character.referenceImages[0] ?? null;
-  const pendingProposals = character.identityProposals.filter((proposal) => proposal.status === "proposed").length;
+  const pendingCareerProposals = character.identityProposals.filter((proposal) => proposal.status === "proposed");
+  const pendingProposals = pendingCareerProposals.length;
   const approvedCanon = character.canon.filter((item) => item.status === "approved").length;
   const latestRun = character.recentRuns[0] ?? null;
   const displayName = displayModelName(character.name);
   const displayCopy = (value: string | null | undefined) => (value ?? "").replaceAll(character.name, displayName);
+  const careerSummary = buildTalentCareerSummary(character);
+  const profilePrimaryActionLabel = pendingProposals
+    ? "Review Career Direction"
+    : careerSummary.stage === "new_face"
+      ? "Approve New Face"
+      : "Book Next Work";
+  const profilePrimaryAction = () => {
+    if (pendingProposals) {
+      document.getElementById("director-approvals")?.scrollIntoView({ block: "start" });
+    } else if (careerSummary.stage === "new_face") {
+      void startBirthRun();
+    } else {
+      navigate("/prompt-studio");
+    }
+  };
   const identityStats = [
-    { label: "Status", value: character.status.replaceAll("_", " "), detail: "Profile" },
-    { label: "Constitution", value: activeConstitution ? `v${activeConstitution.version}` : "None", detail: "Active" },
-    { label: "Canon", value: approvedCanon, detail: `${character.canon.length} total` },
-    { label: "Signals", value: character.feedback.length + character.reflections.length, detail: `${pendingProposals} pending` }
+    { label: "Stage", value: talentStageLabel(careerSummary.stage), detail: "career state" },
+    { label: "Priority", value: agencyPriorityLabel(careerSummary.agencyPriority), detail: "agency investment" },
+    { label: "Platform", value: careerSummary.bestPlatform, detail: "best current fit" },
+    { label: "Momentum", value: careerSummary.momentum, detail: careerSummary.latestAudienceSignal }
   ];
   const referenceStatusOptions = [
     { value: "approved", label: "Approved", detail: "Use as profile source" },
@@ -2403,8 +4363,10 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
       <header className="topbar page-heading">
         <div>
           <button className="text-button" type="button" onClick={() => navigate("/talent")}>
-            Back to Talent
+            Back to Roster
           </button>
+          <span className="eyebrow">Talent Profile</span>
+          <h1>{displayName}</h1>
         </div>
       </header>
 
@@ -2412,7 +4374,7 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
       {message && <div className="notice">{message}</div>}
       <StageHandoff data={data} stageId={pendingProposals ? "feedback" : "birth"} navigate={navigate} />
 
-      <section className="character-dossier-shell" aria-label="Character dossier">
+      <section className="character-dossier-shell" aria-label="Talent profile">
         <aside className="model-dossier-panel">
           <div className="identity-portrait dossier-portrait">
             {profileReference ? (
@@ -2425,14 +4387,14 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
             )}
           </div>
           <div className="dossier-title-block">
-            <span>Model dossier</span>
+            <span>Talent Profile</span>
             <h2>{displayName}</h2>
-            <p>{character.summary ?? "No summary yet."}</p>
+            <p>{careerSummary.shortPositioning}</p>
           </div>
           <div className="button-stack">
-            <button className="primary-action" type="button" onClick={startBirthRun}>Birth run</button>
-            <button type="button" onClick={() => navigate("/prompt-studio")}>Concept</button>
-            <button type="button" onClick={() => navigate(latestRun ? `/runs/${latestRun.id}` : "/runs")}>Timeline</button>
+            <button className="primary-action" type="button" onClick={profilePrimaryAction}>{profilePrimaryActionLabel}</button>
+            <button type="button" onClick={() => navigate("/insights")}>Open Audience Response</button>
+            <button type="button" onClick={() => navigate(latestRun ? `/runs/${latestRun.id}` : "/runs")}>Production Logs</button>
           </div>
           <div className="identity-stat-grid dossier-stat-grid">
             {identityStats.map((card) => (
@@ -2444,14 +4406,125 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
             ))}
           </div>
           <dl className="profile-facts dossier-facts">
+            <div><dt>Identity stability</dt><dd>{careerSummary.identityStability}</dd></div>
+            <div><dt>Development risk</dt><dd>{careerSummary.developmentRisk}</dd></div>
+            <div><dt>Director approvals</dt><dd>{pendingProposals ? `${pendingProposals} waiting` : "Clear"}</dd></div>
             <div><dt>Reference</dt><dd>{profileReference ? profileReference.status.replaceAll("_", " ") : "None"}</dd></div>
-            <div><dt>Latest run</dt><dd>{latestRun ? runTypeLabel(latestRun.type) : "None"}</dd></div>
-            <div><dt>Review</dt><dd>{pendingProposals ? `${pendingProposals} pending` : "Clear"}</dd></div>
             {displayName !== character.name && <div><dt>Record</dt><dd>{character.name.replace(displayName, "").trim()}</dd></div>}
           </dl>
         </aside>
 
         <section className="dossier-workbench">
+          <section className="profile-command talent-profile-command" aria-label="Talent career command">
+            <article className="identity-hero talent-comp-card">
+              <div className="identity-portrait">
+                {profileReference ? (
+                  <img
+                    src={`${apiBaseUrl()}/api/characters/${character.id}/reference-images/${profileReference.id}/file`}
+                    alt={`${displayName} approved reference`}
+                  />
+                ) : (
+                  <span>{modelInitials(character.name)}</span>
+                )}
+              </div>
+              <div>
+                <span>Comp Card</span>
+                <h2>{displayName}</h2>
+                <p>{careerSummary.shortPositioning}</p>
+                <dl className="profile-facts compact-profile-facts">
+                  <div><dt>Stage</dt><dd>{talentStageLabel(careerSummary.stage)}</dd></div>
+                  <div><dt>Agency priority</dt><dd>{agencyPriorityLabel(careerSummary.agencyPriority)}</dd></div>
+                  <div><dt>Best platform</dt><dd>{careerSummary.bestPlatform}</dd></div>
+                  <div><dt>Identity stability</dt><dd>{careerSummary.identityStability}</dd></div>
+                </dl>
+              </div>
+            </article>
+
+            <article className="settings-preview talent-next-move">
+              <div className="section-heading"><h2>Next Recommended Move</h2></div>
+              <strong>{careerSummary.nextRecommendedMove}</strong>
+              <p>{careerSummary.latestAudienceSignal}</p>
+              <div className="button-stack">
+                <button className="primary-action" type="button" onClick={profilePrimaryAction}>{profilePrimaryActionLabel}</button>
+                <button type="button" onClick={() => navigate("/prompt-studio")}>Open Bookings</button>
+              </div>
+            </article>
+          </section>
+
+          <section className="dossier-zone talent-career-summary" aria-label="Talent career summary">
+            <div className="dossier-zone-heading">
+              <span>01</span>
+              <h2>Career Summary</h2>
+            </div>
+            <article className="settings-preview">
+              <div className="section-heading"><h2>Career State</h2></div>
+              <dl>
+                <div><dt>Momentum</dt><dd>{careerSummary.momentum}</dd></div>
+                <div><dt>Audience signal</dt><dd>{careerSummary.latestAudienceSignal}</dd></div>
+                <div><dt>Development risk</dt><dd>{careerSummary.developmentRisk}</dd></div>
+                <div><dt>Pending decisions</dt><dd>{pluralize(careerSummary.pendingDecisionCount, "approval")}</dd></div>
+              </dl>
+            </article>
+            <article className="settings-preview">
+              <div className="section-heading"><h2>Development Notes</h2></div>
+              <p className="action-copy">{activeConstitution ? compactInlineText(activeConstitution.body, 220) : "No active constitution yet. Create the first identity bible entry before pushing this talent."}</p>
+              <p className="action-copy">{approvedCanon ? `${approvedCanon} approved canon note${approvedCanon === 1 ? "" : "s"} support the public story.` : "No approved canon yet."}</p>
+            </article>
+          </section>
+
+          <section className="dossier-zone portfolio-approval-zone" id="director-approvals" aria-label="Director approvals and portfolio">
+            <div className="dossier-zone-heading">
+              <span>02</span>
+              <h2>Director Approvals</h2>
+            </div>
+            <article className="settings-preview">
+              <div className="section-heading"><h2>Career Direction Proposals</h2></div>
+              {pendingCareerProposals.length === 0 ? <EmptyState title="No career direction waiting" body="Audience-led memory, canon, and identity proposals will appear here for director approval." /> : (
+                <div className="compact-list director-approval-list">
+                  {pendingCareerProposals.map((proposal) => (
+                    <div key={proposal.id}>
+                      <strong>{proposal.kind.replaceAll("_", " ")} proposal</strong>
+                      <small>Risk: {proposal.risk_level}</small>
+                      <p>{displayCopy(proposal.body)}</p>
+                      {proposal.rationale && <p>{displayCopy(proposal.rationale)}</p>}
+                      <StatusChoiceGroup
+                        currentStatus={proposal.status}
+                        label={`${proposal.kind} career direction review status`}
+                        options={reviewStatusOptions}
+                        pendingValue={pendingAction?.startsWith(`proposal:${proposal.id}:`) ? pendingAction.split(":").at(-1) ?? null : null}
+                        onSelect={(status) => reviewProposal(proposal, status as "approved" | "rejected")}
+                      />
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+            <article className="settings-preview">
+              <div className="section-heading"><h2>Portfolio Highlights</h2></div>
+              {character.referenceImages.length === 0 ? (
+                <EmptyState title="No portfolio anchors" body="Approve reference images or portfolio shots to anchor this talent's book." />
+              ) : (
+                <div className="reference-board portfolio-highlight-board">
+                  {character.referenceImages.slice(0, 4).map((item) => (
+                    <div key={item.id}>
+                      <img src={`${apiBaseUrl()}/api/characters/${character.id}/reference-images/${item.id}/file`} alt={`${displayName} portfolio highlight`} />
+                      <span>
+                        <strong>{item.status === "approved" ? "Approved reference" : "Reference under review"}</strong>
+                        <small>{item.original_name}</small>
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </article>
+          </section>
+
+          <details className="identity-bible-shell">
+            <summary>
+              <span>Identity Bible</span>
+              <strong>{activeConstitution ? `Constitution v${activeConstitution.version}` : "Needs foundation"}</strong>
+            </summary>
+            <div className="identity-bible-grid">
           <section className="dossier-zone dossier-zone--identity" aria-label="Identity law">
             <div className="dossier-zone-heading">
               <span>01</span>
@@ -2491,7 +4564,7 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
             </EditorSection>
 
             <article className="settings-preview">
-              <div className="section-heading"><h2>Identity Proposals</h2></div>
+              <div className="section-heading"><h2>Career Direction Archive</h2></div>
               {character.identityProposals.length === 0 ? <EmptyState title="No proposals" body="No pending identity changes." /> : (
                 <div className="compact-list">
                   {character.identityProposals.map((proposal) => (
@@ -2644,14 +4717,17 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
             </EditorSection>
           </section>
 
+            </div>
+          </details>
+
           <section className="dossier-zone" aria-label="Evidence and response">
             <div className="dossier-zone-heading">
-              <span>05</span>
+              <span>03</span>
               <h2>Evidence</h2>
             </div>
             <article className="settings-preview">
-              <div className="section-heading"><h2>Feedback Loop</h2></div>
-              {character.feedback.length === 0 ? <EmptyState title="No feedback yet" body="Log feedback from Publishing." /> : (
+              <div className="section-heading"><h2>Audience Response</h2></div>
+              {character.feedback.length === 0 ? <EmptyState title="No audience response yet" body="Log audience response from Publishing." /> : (
                 <div className="compact-list">
                   {character.feedback.map((item) => (
                     <div key={item.id}>
@@ -2665,14 +4741,14 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
             </article>
 
             <article className="settings-preview">
-              <div className="section-heading"><h2>Reflections</h2></div>
-              {character.reflections.length === 0 ? <EmptyState title="No reflections" body="Run reflection after response." /> : (
+              <div className="section-heading"><h2>Audience Debriefs</h2></div>
+              {character.reflections.length === 0 ? <EmptyState title="No audience debriefs" body="Debrief audience response after a placement." /> : (
                 <div className="compact-list">
                   {character.reflections.map((item) => (
                     <div key={item.id}>
                       <strong>{item.summary}</strong>
                       <small>{item.body}</small>
-                      {item.run_id && <button className="text-button" type="button" onClick={() => navigate(`/runs/${item.run_id}`)}>Open run</button>}
+                      {item.run_id && <button className="text-button" type="button" onClick={() => navigate(`/runs/${item.run_id}`)}>Open Production Log</button>}
                     </div>
                   ))}
                 </div>
@@ -2680,15 +4756,22 @@ function CharacterProfilePage({ characterId, data, navigate }: { characterId: st
             </article>
 
             <article className="settings-preview">
-              <div className="section-heading"><h2>Recent Timeline</h2></div>
-              <div className="run-stack">
-                {character.recentRuns.map((run) => (
-                  <button className="run-row" key={run.id} type="button" onClick={() => navigate(`/runs/${run.id}`)}>
-                    <span><strong>{run.title}</strong><small>{runTypeLabel(run.type)}</small></span>
-                    <em className={statusClass(run.status)}>{run.status.replaceAll("_", " ")}</em>
-                  </button>
-                ))}
+              <div className="section-heading">
+                <h2>Career Timeline</h2>
+                <button type="button" onClick={() => navigate(latestRun ? `/runs/${latestRun.id}` : "/runs")}>Production Logs</button>
               </div>
+              {character.recentRuns.length === 0 ? (
+                <EmptyState title="No career events yet" body="Scouting, bookings, portfolio review, publishing, and audience response will build this timeline." />
+              ) : (
+                <div className="run-stack career-timeline-list">
+                  {character.recentRuns.map((run) => (
+                    <button className="run-row" key={run.id} type="button" onClick={() => navigate(`/runs/${run.id}`)}>
+                      <span><strong>{careerEventTitle(run)}</strong><small>{formatDate(run.updated_at)} · {careerEventOutcome(run)}</small></span>
+                      <em>Log</em>
+                    </button>
+                  ))}
+                </div>
+              )}
             </article>
           </section>
         </section>
@@ -2751,50 +4834,59 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
   const [scene, setScene] = useState("A quiet studio reset with tactile props and visible process notes.");
   const [goal, setGoal] = useState("Show a daily ritual while preserving synthetic identity transparency.");
   const [contentPillar, setContentPillar] = useState("process");
+  const [audienceHypothesis, setAudienceHypothesis] = useState("This booking tests whether the audience responds to quiet ritual/process content.");
   const [recipe, setRecipe] = useState<PromptRecipe | null>(null);
+  const [startingProduction, setStartingProduction] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const selectedCharacter = data.characters.find((character) => character.id === characterId) ?? data.characters[0] ?? null;
   const selectedCandidate = candidates.find((candidate) => candidate.id === selectedCandidateId) ?? candidates[0] ?? null;
   const selectedBrief = briefs.find((brief) => brief.id === selectedBriefId) ?? briefs[0] ?? null;
   const selectedCandidateExplicit = candidates.find((candidate) => candidate.id === selectedCandidateId) ?? null;
+  const bookingModel = selectedCharacter ? buildBookingDeskModel({
+    character: selectedCharacter,
+    candidate: selectedCandidateExplicit ?? selectedCandidate,
+    brief: selectedBrief,
+    recipe,
+    platform
+  }) : null;
   const conceptStats = [
-    { label: "Activities", value: candidates.length, detail: selectedCandidate?.status ?? "None" },
-    { label: "Briefs", value: briefs.length, detail: selectedBrief?.platform_targets ?? platform },
-    { label: "Recipe", value: recipe ? "Ready" : "None", detail: recipe ? "Saved" : "Compose" },
-    { label: "Frame", value: platform === "Instagram" ? "4:5" : "9:16", detail: platform }
+    { label: "Booking Ideas", value: candidates.length, detail: selectedCandidate?.status ?? "None" },
+    { label: "Shoot Briefs", value: briefs.length, detail: selectedBrief?.platform_targets ?? platform },
+    { label: "Treatment", value: recipe ? "Ready" : "None", detail: recipe ? "Production ready" : "Prepare" },
+    { label: "Platform", value: bookingModel?.platform ?? platform, detail: platform === "Instagram" ? "4:5 frame" : "9:16 frame" }
   ];
   const canCreateBrief = Boolean(characterId && selectedCandidateId);
   const canComposeRecipe = Boolean(characterId && selectedBriefId);
-  const productionPath = `/assets?characterId=${encodeURIComponent(characterId)}&status=raw_generation`;
+  const productionPath = bookingModel?.productionPath ?? `/assets?characterId=${encodeURIComponent(characterId)}&status=raw_generation`;
   const selectedBriefSource = selectedBrief?.activity_candidate_id
     ? candidates.find((candidate) => candidate.id === selectedBrief.activity_candidate_id)
     : null;
-  const recipeScene = recipe?.final_prompt?.match(/SCENE\s*\n([\s\S]*?)\n\nPLATFORM/)?.[1]?.trim() ?? "";
+  const recipeScene = treatmentScene(recipe);
   const planningSteps = [
     {
       number: "01",
-      title: "Choose activity",
+      title: "Choose booking idea",
       state: selectedCandidateExplicit ? "Selected" : candidates.length ? "Pick one" : "Needed",
       body: selectedCandidateExplicit
         ? `${selectedCandidateExplicit.title}: ${selectedCandidateExplicit.visual_motif ?? selectedCandidateExplicit.body}`
-        : "Generate activity candidates, then choose the one that should become content."
+        : "Propose booking ideas, then choose the one that should become a shoot."
     },
     {
       number: "02",
-      title: "Create brief",
+      title: "Create shoot brief",
       state: selectedBrief ? "Brief ready" : "Needed",
       body: selectedBrief
         ? `${selectedBrief.platform_targets ?? platform} · ${selectedBrief.visual_direction ?? "No visual direction"}`
-        : "The brief locks the selected activity into platform, goal, visual direction, and caption angle."
+        : "The shoot brief locks the selected booking idea into platform, goal, visual direction, and caption angle."
     },
     {
       number: "03",
-      title: "Compose recipe",
-      state: recipe ? "Recipe ready" : "Needed",
+      title: "Prepare creative treatment",
+      state: recipe ? "Treatment ready" : "Needed",
       body: recipe
         ? compactInlineText(recipeScene || recipe.final_prompt || "", 110)
-        : "The recipe assembles character law, appearance rules, selected brief, and generation settings."
+        : "The creative treatment assembles identity rules, appearance, selected brief, and production settings."
     }
   ];
 
@@ -2804,6 +4896,9 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
     setScene(`${candidate.title}: ${candidate.body}${candidate.location_fiction ? ` Location: ${candidate.location_fiction}.` : ""}${candidate.visual_motif ? ` Visual motif: ${candidate.visual_motif}.` : ""}`);
     setGoal(`Turn ${candidate.title.toLowerCase()} into an audience-facing ${nextPlatform} post that stays faithful to ${selectedCharacter?.name ?? "the character"}.`);
     setContentPillar(candidate.activity_type ?? "process");
+    if (selectedCharacter) {
+      setAudienceHypothesis(deriveAudienceHypothesis(selectedCharacter, candidate, null, nextPlatform));
+    }
     setRecipe(null);
   }
 
@@ -2813,8 +4908,12 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
     setScene(brief.visual_direction ?? scene);
     setGoal(brief.goal ?? goal);
     setContentPillar(brief.content_pillar ?? contentPillar);
+    if (selectedCharacter) {
+      const sourceCandidate = brief.activity_candidate_id ? candidates.find((candidate) => candidate.id === brief.activity_candidate_id) : selectedCandidate;
+      setAudienceHypothesis(deriveAudienceHypothesis(selectedCharacter, sourceCandidate, brief, brief.platform_targets ?? platform));
+    }
     setRecipe(null);
-    setMessage("Brief selected for recipe composition.");
+    setMessage("Shoot brief selected for creative treatment.");
   }
 
   useEffect(() => {
@@ -2846,10 +4945,9 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
       setCandidates(payload.candidates);
       setSelectedCandidateId(payload.candidates[0]?.id ?? "");
       if (payload.candidates[0]) applyCandidateToComposer(payload.candidates[0]);
-      setMessage("Activity candidates generated.");
-      navigate(`/runs/${payload.run.id}`);
+      setMessage("Booking ideas proposed.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to generate activities.");
+      setError(caught instanceof Error ? caught.message : "Unable to propose booking ideas.");
     }
   }
 
@@ -2860,7 +4958,7 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
     await refreshPlanning();
     setSelectedCandidateId(candidateId);
     setSelectedBriefId("");
-    setMessage("Activity selected. Composer fields updated; create a brief next.");
+    setMessage("Booking idea selected. Create a shoot brief next.");
   }
 
   async function createBrief() {
@@ -2874,14 +4972,14 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
         platformTargets: platform,
         contentPillar,
         visualDirection: candidate?.visual_motif ?? scene,
-        captionAngle: `Process-aware caption for ${candidate?.title ?? "the selected activity"}.`,
+        captionAngle: `Process-aware caption for ${candidate?.title ?? "the selected booking"}.`,
         disclosureFlags: "synthetic media disclosure",
-        desiredOutputs: "image prompt and caption variants"
+        desiredOutputs: `Audience hypothesis: ${audienceHypothesis}\nImage prompt and caption variants`
       });
       await refreshPlanning();
       setSelectedBriefId(payload.brief.id);
       setRecipe(null);
-      setMessage("Content brief created from the selected activity. Compose the recipe next.");
+      setMessage("Shoot brief created from the selected booking idea. Prepare the creative treatment next.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create brief.");
     }
@@ -2898,9 +4996,25 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
         generationSettings: { aspectRatio: platform === "Instagram" ? "4:5" : "9:16" }
       });
       setRecipe(payload.recipe);
-      setMessage("Prompt recipe composed and saved. Continue to Production to generate images.");
+      setMessage("Creative treatment prepared. Start production when the assignment is ready.");
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to compose prompt.");
+      setError(caught instanceof Error ? caught.message : "Unable to prepare creative treatment.");
+    }
+  }
+
+  async function startProduction() {
+    if (!recipe) return;
+    setStartingProduction(true);
+    setError(null);
+    setMessage(null);
+    try {
+      await postJson(`/api/prompt-recipes/${recipe.id}/generate-image`, {});
+      setMessage("Production started. Candidate shots will appear in Portfolio for review.");
+      navigate(productionPath);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to start production.");
+    } finally {
+      setStartingProduction(false);
     }
   }
 
@@ -2909,23 +5023,23 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
       <>
         <header className="topbar page-heading">
           <div>
-            <span className="eyebrow">Concept workshop</span>
-            <h1>Prompt Studio</h1>
+            <span className="eyebrow">Booking desk</span>
+            <h1>Booking Desk</h1>
           </div>
         </header>
         <section className="concept-command" aria-label="Concept command">
           <article className="concept-hero">
             <span>First run</span>
             <h2>No character</h2>
-            <p>Create identity before composing prompts.</p>
+            <p>Scout talent before preparing creative treatments.</p>
             <div className="button-stack">
-              <button className="primary-action" type="button" onClick={() => navigate("/talent")}>Open Talent</button>
+              <button className="primary-action" type="button" onClick={() => navigate("/talent")}>Open Roster</button>
             </div>
           </article>
           <div className="concept-stat-grid">
-            <article><span>Activities</span><strong>0</strong><p>Waiting</p></article>
+            <article><span>Ideas</span><strong>0</strong><p>Waiting</p></article>
             <article><span>Briefs</span><strong>0</strong><p>Waiting</p></article>
-            <article><span>Recipe</span><strong>None</strong><p>Waiting</p></article>
+            <article><span>Treatment</span><strong>None</strong><p>Waiting</p></article>
             <article><span>Frame</span><strong>None</strong><p>Waiting</p></article>
           </div>
         </section>
@@ -2935,19 +5049,25 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
 
   return (
     <>
-      <header className="topbar page-heading"><div><span className="eyebrow">Concept workshop</span><h1>Prompt Studio</h1></div></header>
+      <header className="topbar page-heading">
+        <div>
+          <span className="eyebrow">Creative assignments</span>
+          <h1>Booking Desk</h1>
+          <p>Plan the next piece of work for represented talent, then send the treatment into production.</p>
+        </div>
+      </header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
-      <section className="concept-command" aria-label="Concept command">
-        <article className="concept-hero">
-          <span>Selected character</span>
-          <h2>{selectedCharacter?.name ?? "None"}</h2>
-          <p>{recipe ? "Recipe ready for image generation." : selectedBrief ? "Brief ready for recipe composition." : selectedCandidateExplicit ? `${selectedCandidateExplicit.title} selected for brief.` : "Choose an activity to start the content chain."}</p>
+      <section className="concept-command booking-command" aria-label="Booking assignment">
+        <article className="concept-hero booking-hero">
+          <span>Selected talent</span>
+          <h2>{bookingModel?.talentName}</h2>
+          <p>{bookingModel?.nextStep}</p>
           <div className="button-stack">
-            <button type="button" onClick={generateActivities} disabled={!characterId}>1 Generate activities</button>
-            <button type="button" onClick={createBrief} disabled={!canCreateBrief}>2 Create brief</button>
-            <button className="primary-action" type="button" onClick={composePrompt} disabled={!canComposeRecipe}>3 Compose recipe</button>
-            {recipe && <button type="button" onClick={() => navigate(productionPath)}>Generate image</button>}
+            <button className={!recipe && !selectedBrief && !selectedCandidateExplicit ? "primary-action" : ""} type="button" onClick={generateActivities} disabled={!characterId}>Propose Booking Ideas</button>
+            <button className={!recipe && !selectedBrief && selectedCandidateExplicit ? "primary-action" : ""} type="button" onClick={createBrief} disabled={!canCreateBrief}>Create Shoot Brief</button>
+            <button className={!recipe && selectedBrief ? "primary-action" : ""} type="button" onClick={composePrompt} disabled={!canComposeRecipe}>Prepare Creative Treatment</button>
+            <button className={recipe ? "primary-action" : ""} type="button" onClick={startProduction} disabled={!recipe || startingProduction}>{startingProduction ? "Starting Production" : "Start Production"}</button>
           </div>
         </article>
         <div className="concept-stat-grid">
@@ -2960,7 +5080,38 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
           ))}
         </div>
       </section>
-      <section className="prompt-flow-panel" aria-label="Prompt Studio workflow">
+
+      {bookingModel && (
+        <section className="booking-assignment-panel" aria-label="Current booking assignment">
+          <article>
+            <span>Talent</span>
+            <strong>{bookingModel.talentName}</strong>
+            <p>{bookingModel.careerGoal}</p>
+          </article>
+          <article>
+            <span>Platform</span>
+            <strong>{bookingModel.platform}</strong>
+            <p>{bookingModel.audienceHypothesis}</p>
+          </article>
+          <article>
+            <span>Booking Idea</span>
+            <strong>{bookingModel.title}</strong>
+            <p>{bookingModel.bookingIdea}</p>
+          </article>
+          <article>
+            <span>Shoot Brief</span>
+            <strong>{selectedBrief ? "Ready" : "Needed"}</strong>
+            <p>{bookingModel.shootBriefSummary}</p>
+          </article>
+          <article>
+            <span>Creative Treatment</span>
+            <strong>{recipe ? "Ready" : "Needed"}</strong>
+            <p>{bookingModel.creativeTreatmentSummary}</p>
+          </article>
+        </section>
+      )}
+
+      <section className="prompt-flow-panel booking-flow-panel" aria-label="Booking Desk workflow">
         {planningSteps.map((step) => (
           <article key={step.number} className={step.state.includes("ready") || step.state === "Selected" ? "prompt-flow-step complete" : "prompt-flow-step"}>
             <span>{step.number}</span>
@@ -2972,20 +5123,22 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
           </article>
         ))}
       </section>
-      <section className="prompt-studio-grid">
-        <article className="settings-preview">
-          <div className="section-heading"><h2>Working Brief Inputs</h2><span>{selectedCandidateExplicit ? "Synced from activity" : "Manual"}</span></div>
+
+      <section className="prompt-studio-grid booking-desk-grid">
+        <article className="settings-preview booking-inputs">
+          <div className="section-heading"><h2>Shoot Brief Inputs</h2><span>{selectedCandidateExplicit ? "Synced from booking idea" : "Manual"}</span></div>
           <div className="form-stack">
-            <label>Character<select value={characterId} onChange={(event) => setCharacterId(event.target.value)}>{data.characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
+            <label>Talent<select value={characterId} onChange={(event) => setCharacterId(event.target.value)}>{data.characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
             <label>Platform<select value={platform} onChange={(event) => setPlatform(event.target.value)}>{["Instagram", "TikTok", "Threads", "Generic"].map((item) => <option key={item}>{item}</option>)}</select></label>
-            <label>Scene / activity<textarea value={scene} onChange={(event) => setScene(event.target.value)} /></label>
-            <label>Goal<textarea value={goal} onChange={(event) => setGoal(event.target.value)} /></label>
-            <label>Content pillar<input value={contentPillar} onChange={(event) => setContentPillar(event.target.value)} /></label>
+            <label>Booking idea / visual setup<textarea value={scene} onChange={(event) => setScene(event.target.value)} /></label>
+            <label>Career goal<textarea value={goal} onChange={(event) => setGoal(event.target.value)} /></label>
+            <label>Audience hypothesis<textarea value={audienceHypothesis} onChange={(event) => setAudienceHypothesis(event.target.value)} /></label>
+            <label>Content strength<input value={contentPillar} onChange={(event) => setContentPillar(event.target.value)} /></label>
           </div>
         </article>
         <article className="settings-preview">
-          <div className="section-heading"><h2>1 Activity Candidates</h2><span>{selectedCandidateExplicit ? "One selected" : "Select source"}</span></div>
-          {candidates.length === 0 ? <EmptyState title="No candidates" body="Generate activities to start planning." /> : (
+          <div className="section-heading"><h2>Booking Ideas</h2><span>{selectedCandidateExplicit ? "One selected" : "Choose booking"}</span></div>
+          {candidates.length === 0 ? <EmptyState title="No booking ideas" body="Propose booking ideas to start planning." /> : (
             <div className="compact-list prompt-choice-list">
               {candidates.map((candidate) => {
                 const selected = candidate.id === selectedCandidateId;
@@ -2994,9 +5147,9 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
                     <span>
                       <strong>{candidate.title}</strong>
                       <small>{candidate.body}</small>
-                      <small>{candidate.location_fiction || "No location"} · {candidate.visual_motif || "No motif"} · identity {candidate.identity_fit_score.toFixed(2)}</small>
+                      <small>{candidate.platform_fit || "Platform fit not set"} · {candidate.visual_motif || "Visual motif open"} · {candidate.location_fiction || "Location open"}</small>
                     </span>
-                    <em className={selected ? "status-pill completed" : "status-pill queued"}>{selected ? "selected" : candidate.status}</em>
+                    <em className={selected ? "status-pill completed" : "status-pill queued"}>{selected ? "chosen" : candidate.status}</em>
                   </button>
                 );
               })}
@@ -3004,15 +5157,15 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
           )}
         </article>
         <article className="settings-preview">
-          <div className="section-heading"><h2>2 Content Brief</h2><span>{selectedBrief ? "Feeds recipe" : "Create next"}</span></div>
-          {briefs.length === 0 ? <EmptyState title="No briefs" body="Create a brief from a selected activity." /> : (
+          <div className="section-heading"><h2>Shoot Brief</h2><span>{selectedBrief ? "Feeds treatment" : "Create next"}</span></div>
+          {briefs.length === 0 ? <EmptyState title="No shoot briefs" body="Create a shoot brief from a selected booking idea." /> : (
             <div className="compact-list">
               {briefs.map((brief) => (
                 <button className={`run-row${selectedBriefId === brief.id ? " selected" : ""}`} key={brief.id} type="button" onClick={() => selectBriefForRecipe(brief)}>
                   <span>
                     <strong>{brief.goal}</strong>
                     <small>{brief.platform_targets} · {brief.content_pillar} · {brief.visual_direction}</small>
-                    {brief.activity_candidate_id && <small>From: {candidates.find((candidate) => candidate.id === brief.activity_candidate_id)?.title ?? "activity candidate"}</small>}
+                    {brief.activity_candidate_id && <small>From: {candidates.find((candidate) => candidate.id === brief.activity_candidate_id)?.title ?? "booking idea"}</small>}
                   </span>
                   {selectedBriefId === brief.id && <em className="status-pill completed">selected</em>}
                 </button>
@@ -3021,23 +5174,28 @@ function PromptStudioPage({ data, navigate }: { data: AppData; navigate: (path: 
           )}
         </article>
         <article className="settings-preview">
-          <div className="section-heading"><h2>3 Recipe Output</h2><span>{recipe ? "Ready" : "Not composed"}</span></div>
+          <div className="section-heading"><h2>Creative Treatment</h2><span>{recipe ? "Ready" : "Not prepared"}</span></div>
           {!recipe ? (
-            <EmptyState title="No prompt composed" body={selectedBrief ? "Compose a recipe to assemble law, look, activity, and generation settings." : "Select or create a brief before composing a recipe."} />
+            <EmptyState title="No creative treatment" body={selectedBrief ? "Prepare a creative treatment to assemble identity, look, booking idea, and production settings." : "Select or create a shoot brief before preparing a creative treatment."} />
           ) : (
-            <div className="prompt-preview recipe-output">
-              <strong>Generation scene</strong>
+            <div className="prompt-preview recipe-output booking-treatment">
+              <strong>Production scene</strong>
               <p>{recipeScene || "No scene block found."}</p>
-              <strong>Lineage</strong>
-              <small>Activity: {selectedBriefSource?.title ?? selectedCandidate?.title ?? "Not linked"}</small>
-              <small>Brief: {selectedBrief?.goal ?? recipe.content_brief_id ?? "None"}</small>
-              <small>Constitution: {recipe.constitution_version_id}</small>
-              <small>Appearance: {recipe.appearance_profile_id}</small>
+              <strong>Audience hypothesis</strong>
+              <p>{bookingModel?.audienceHypothesis}</p>
               <div className="inline-actions">
-                <button className="primary-action" type="button" onClick={() => navigate(productionPath)}>Continue to Production</button>
+                <button className="primary-action" type="button" onClick={startProduction} disabled={startingProduction}>{startingProduction ? "Starting Production" : "Start Production"}</button>
               </div>
-              <details>
-                <summary>Full assembled prompt</summary>
+              <details className="technical-treatment-audit">
+                <summary>Technical treatment audit</summary>
+                <div className="compact-list">
+                  <div><strong>Booking idea</strong><small>{selectedBriefSource?.title ?? selectedCandidate?.title ?? "Not linked"}</small></div>
+                  <div><strong>Shoot brief</strong><small>{selectedBrief?.goal ?? recipe.content_brief_id ?? "None"}</small></div>
+                  <div><strong>Treatment ID</strong><small>{recipe.id}</small></div>
+                  <div><strong>Identity bible</strong><small>{recipe.constitution_version_id ?? "None"}</small></div>
+                  <div><strong>Appearance</strong><small>{recipe.appearance_profile_id ?? "None"}</small></div>
+                </div>
+                <strong>Treatment source</strong>
                 <pre>{recipe.final_prompt}</pre>
                 <strong>Negative prompt</strong>
                 <pre>{recipe.negative_prompt}</pre>
@@ -3102,53 +5260,53 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     { label: "Visible", value: visibleAssets.length, detail: visibleAssets.length === assets.length ? "All assets" : `${assets.length} total` },
     { label: "Analyzed", value: analyzedCount, detail: assets.length ? `${Math.round((analyzedCount / assets.length) * 100)}%` : "0%" },
     { label: "Approved", value: approvedCount, detail: "Review gate" },
-    { label: "Selected", value: selectedAsset ? assetStatusLabel(selectedAsset.status) : "None", detail: selectedAsset?.provider ?? providerOverride }
+    { label: "Selected", value: selectedAsset ? assetStatusLabel(selectedAsset.status) : "None", detail: selectedAsset ? "Current shot" : "Default setup" }
   ];
 
   const activeComfyWorkflows = comfyWorkflows.filter((workflow) => workflow.status === "active" && !workflow.validation_error);
   const engineOptions = [
     {
       value: "auto",
-      label: "Auto router",
+      label: "Default studio setup",
       detail: providerSettings
-        ? `Default ${providerSettings.defaultImageGenerationProvider.replaceAll("-", " ")} with policy fallback`
-        : "Uses configured routing and fallbacks",
+        ? "Uses Studio Ops defaults with safety fallback"
+        : "Uses configured studio defaults",
       ready: true
     },
     {
       value: "hermes",
       label: "Hermes",
       detail: providerSettings?.hermesImageGenerationPath
-        ? `Route ${providerSettings.hermesImageGenerationPath}`
-        : "Set Hermes image route in Operations",
+        ? "Image setup saved in Studio Ops"
+        : "Finish image setup in Studio Ops",
       ready: Boolean(providerSettings?.hasHermesApiKey && providerSettings.hermesImageGenerationPath)
     },
     {
       value: "openai",
       label: "OpenAI Images",
       detail: providerSettings
-        ? `${providerSettings.openaiImageModel} · ${providerSettings.openaiImageSize}`
-        : "Direct OpenAI image endpoint",
+        ? "Image setup saved in Studio Ops"
+        : "Finish image setup in Studio Ops",
       ready: Boolean(providerSettings?.hasOpenaiApiKey)
     },
     {
       value: "comfyui-cloud",
       label: "ComfyUI Cloud",
       detail: activeComfyWorkflows.length
-        ? `${activeComfyWorkflows.length} active workflow${activeComfyWorkflows.length === 1 ? "" : "s"}`
-        : "Needs active workflow",
+        ? `${activeComfyWorkflows.length} studio workflow${activeComfyWorkflows.length === 1 ? "" : "s"} ready`
+        : "Needs Studio Ops workflow",
       ready: Boolean(providerSettings?.comfyuiCloudReady)
     },
     {
       value: "wavespeed",
       label: "WaveSpeed AI",
-      detail: providerSettings?.wavespeedImageGenerationPath ?? "Flux route",
+      detail: providerSettings?.wavespeedImageGenerationPath ? "Image setup saved in Studio Ops" : "Finish image setup in Studio Ops",
       ready: Boolean(providerSettings?.hasWavespeedApiKey)
     },
     {
       value: "mock",
       label: "Mock",
-      detail: "Local test image, no external provider",
+      detail: "Local test production, no external service",
       ready: true
     }
   ];
@@ -3256,23 +5414,23 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
   async function generateImage() {
     if (!selectedRecipeId || generationInProgress) return;
     if (!selectedEngine.ready) {
-      setError(`${selectedEngine.label} is not ready. Configure it in Operations before generating.`);
+      setError(`${selectedEngine.label} is not ready. Open Studio Ops to finish setup before starting production.`);
       return;
     }
       if (providerOverride !== "auto" && !overrideReason.trim()) {
-        setError("Manual engine selection requires an override reason so the run audit trail explains the choice.");
+        setError("Manual setup changes require a note so the production log explains the choice.");
         return;
       }
       setError(null);
       setGeneratingImage(true);
-      setMessage(`Image generation started with ${selectedEngine.label}. Waiting for the provider to return an asset.`);
+      setMessage(`Production started with ${selectedEngine.label}. Waiting for the portfolio shot.`);
       try {
         const payload = await postJson<{ run: RunSummary; asset?: ImageAsset }>(`/api/prompt-recipes/${selectedRecipeId}/generate-image`, {
           providerOverride,
           overrideReason: overrideReason.trim() || undefined,
           contentTierOverride: contentTierOverride || undefined
         });
-        setMessage(`Image generation ${payload.run.status}. ${payload.asset ? "Asset stored locally." : "Check Debug Runs for provider details."}`);
+        setMessage(`Production ${payload.run.status}. ${payload.asset ? "Portfolio shot stored locally." : "Check Production Logs for setup details."}`);
         await loadAssets({ status: "", platformFit: "", query: "" });
         if (payload.asset) {
           setStatusFilter("");
@@ -3292,7 +5450,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     setError(null); setMessage(null);
     try {
       await postJson(`/api/assets/${assetId}/analyze`, {});
-      setMessage("Image analysis stored.");
+      setMessage("Quality review stored.");
       await loadAssets();
       await loadSelectedDetail(assetId);
     } catch (caught) {
@@ -3304,7 +5462,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     setError(null); setMessage(null);
     setAssetReviewPending(status);
     try {
-      await postJson(`/api/assets/${assetId}/review`, { status, reason: reviewReason || "Manual review from Asset Library." });
+      await postJson(`/api/assets/${assetId}/review`, { status, reason: reviewReason || "Manual review from Portfolio." });
       setMessage(`Asset marked ${status}.`);
       await loadAssets();
       await loadSelectedDetail(assetId);
@@ -3319,8 +5477,8 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     setError(null); setMessage(null);
     try {
       await postJson<{ run: RunSummary; draft: Draft }>(`/api/assets/${assetId}/create-draft`, {});
-      setMessage("Draft package created.");
-      navigate("/drafts");
+      setMessage("Social package created.");
+      navigate("/review?type=social_package");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to create draft package.");
     }
@@ -3340,7 +5498,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
 
   function chooseGenerationEngine(engine: { value: string; label: string; ready: boolean }) {
     if (!engine.ready && engine.value !== "auto") {
-      setError(`${engine.label} is not ready. Open Operations to configure credentials or workflow routes.`);
+      setError(`${engine.label} is not ready. Open Studio Ops to finish setup.`);
       return;
     }
     setError(null);
@@ -3369,7 +5527,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
     <>
       <header className="topbar page-heading">
         <div>
-          <h1>Library</h1>
+          <h1>Portfolio</h1>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -3377,20 +5535,20 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
       <StageHandoff data={data} stageId="production" navigate={navigate} />
       <section className="asset-command" aria-label="Asset command">
         <article className="asset-hero">
-          <span>Route</span>
-          <h2>{selectedRecipe ? compactInlineText(selectedRecipe.final_prompt, 28) || selectedRecipe.id.replace("prompt_recipe_", "recipe ").slice(0, 15) : "No recipe"}</h2>
-          <p>{generationInProgress ? `${selectedEngine.label} running` : selectedRecipe ? `${selectedEngine.label} selected` : "Select a recipe and engine to generate."}</p>
+          <span>Production setup</span>
+          <h2>{selectedRecipe ? compactInlineText(selectedRecipe.final_prompt, 28) || selectedRecipe.id.replace("prompt_recipe_", "treatment ").slice(0, 15) : "No treatment"}</h2>
+          <p>{generationInProgress ? `${selectedEngine.label} running` : selectedRecipe ? `${selectedEngine.label} selected` : "Select a creative treatment and studio setup."}</p>
           <div className="button-stack">
-            <button type="button" onClick={() => navigate("/prompt-studio")}>Concept</button>
+            <button type="button" onClick={() => navigate("/prompt-studio")}>Booking Desk</button>
             <button className="primary-action" type="button" onClick={generateImage} disabled={!selectedRecipeId || generationInProgress}>
-              {generationInProgress ? "Generating" : "Generate"}
+              {generationInProgress ? "In production" : "Start Production"}
             </button>
           </div>
           {generationInProgress && (
             <div className="activity-notice" role="status" aria-live="polite">
               <span />
               <strong>{activeImageRun ? activeImageRun.status.replaceAll("_", " ") : "starting"}</strong>
-              <small>{activeImageRun ? `Run ${shortRunId(activeImageRun.id)}` : "Submitting request"}</small>
+              <small>{activeImageRun ? `Log ${shortRunId(activeImageRun.id)}` : "Submitting request"}</small>
             </div>
           )}
         </article>
@@ -3404,24 +5562,24 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
           ))}
         </div>
       </section>
-      <section className="asset-generation-panel" aria-label="Image generation setup">
+      <section className="asset-generation-panel" aria-label="Production setup">
         <article className="settings-preview generation-recipe-panel">
           <div className="section-heading">
-            <h2>Generation setup</h2>
+            <h2>Production setup</h2>
             <span>{selectedEngine.label}</span>
           </div>
           <div className="form-stack">
-            <label>Prompt recipe<select value={selectedRecipeId} onChange={(event) => setSelectedRecipeId(event.target.value)}>{recipes.length === 0 && <option value="">No recipes</option>}{recipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{assetRecipeLabel(recipe)}</option>)}</select></label>
+            <label>Creative treatment<select value={selectedRecipeId} onChange={(event) => setSelectedRecipeId(event.target.value)}>{recipes.length === 0 && <option value="">No treatments</option>}{recipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{assetRecipeLabel(recipe)}</option>)}</select></label>
             <label>Content tier<select value={contentTierOverride} onChange={(event) => setContentTierOverride(event.target.value)}><option value="">Auto classify</option><option value="sfw_standard">SFW standard</option><option value="sfw_sensitive">SFW sensitive</option><option value="mature_adult">Mature adult</option><option value="blocked_or_uncertain">Blocked or uncertain</option></select></label>
-            {providerOverride !== "auto" && <label>Engine choice reason<textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Required for manual provider override" /></label>}
+            {providerOverride !== "auto" && <label>Manual setup note<textarea value={overrideReason} onChange={(event) => setOverrideReason(event.target.value)} placeholder="Required when changing the default setup" /></label>}
           </div>
         </article>
         <article className="settings-preview generation-engine-panel">
           <div className="section-heading">
-            <h2>Generation engine</h2>
-            <button type="button" onClick={() => navigate("/settings")}>Configure</button>
+            <h2>Production setup</h2>
+            <button type="button" onClick={() => navigate("/settings")}>Open Studio Ops</button>
           </div>
-          <div className="generation-engine-grid" role="list" aria-label="Generation engines">
+          <div className="generation-engine-grid" role="list" aria-label="Production setup choices">
             {engineOptions.map((engine) => (
               <button
                 key={engine.value}
@@ -3436,25 +5594,25 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
               </button>
             ))}
           </div>
-          <p className="generation-engine-note">Auto preserves policy routing and fallback. A manual engine choice is recorded on the run with the override reason.</p>
+          <p className="generation-engine-note">Auto keeps the default studio setup. Any manual choice is recorded in the production log with the operator note.</p>
         </article>
       </section>
       <section className="asset-workbench">
         <article className="settings-preview asset-controls">
           <div className="asset-filter-heading">
-            <h2>Archive controls</h2>
-            <span>{activeFilterCount ? `${activeFilterCount} active` : "All assets"}</span>
+            <h2>Portfolio controls</h2>
+            <span>{activeFilterCount ? `${activeFilterCount} active` : "All shots"}</span>
             <button type="button" onClick={() => { void clearAssetFilters(); }} disabled={!activeFilterCount}>Reset</button>
           </div>
           <div className="form-stack asset-filter-grid">
-            <label>Search<input type="search" value={assetQuery} onChange={(event) => applyAssetSearch(event.target.value)} placeholder="Prompt, provider, status" /></label>
-            <label>Character<select value={characterId} onChange={(event) => changeCharacter(event.target.value)}><option value="">All characters</option>{data.characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
+            <label>Search<input type="search" value={assetQuery} onChange={(event) => applyAssetSearch(event.target.value)} placeholder="Talent, treatment, status" /></label>
+            <label>Talent<select value={characterId} onChange={(event) => changeCharacter(event.target.value)}><option value="">All talent</option>{data.characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
             <label>Status<select value={statusFilter} onChange={(event) => applyFilters(event.target.value, platformFit)}>{assetStatusOptions.map((item) => <option key={item} value={item}>{item ? item.replaceAll("_", " ") : "All states"}</option>)}</select></label>
             <label>Platform fit<select value={platformFit} onChange={(event) => applyFilters(statusFilter, event.target.value)}>{platformOptions.map((item) => <option key={item} value={item}>{item || "Any platform"}</option>)}</select></label>
           </div>
         </article>
         <article className="settings-preview asset-grid-panel">
-          <div className="section-heading"><h2>Assets</h2><span>{visibleAssets.length}/{assets.length}</span></div>
+          <div className="section-heading"><h2>Portfolio Shots</h2><span>{visibleAssets.length}/{assets.length}</span></div>
           <div className="asset-lane" aria-label="Asset status lanes">
             {assetQuickLanes.map((lane) => (
               <button key={lane.label} className={statusFilter === lane.status ? "selected" : ""} type="button" onClick={() => applyFilters(lane.status, platformFit)}>
@@ -3463,12 +5621,12 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
               </button>
             ))}
           </div>
-          {assets.length === 0 ? <EmptyState title="No assets yet" body="Compose a prompt recipe, then generate the first image." /> : visibleAssets.length === 0 ? <EmptyState title="No matching assets" body="Change filters or generate a new candidate." /> : (
+          {assets.length === 0 ? <EmptyState title="No portfolio shots yet" body="Prepare a creative treatment, then start the first production." /> : visibleAssets.length === 0 ? <EmptyState title="No matching shots" body="Change filters or start a new production." /> : (
             <div className="asset-grid">
               {visibleAssets.map((asset) => (
                 <button key={asset.id} className={`asset-card ${selectedAsset?.id === asset.id ? "selected" : ""}`} type="button" onClick={() => setSelectedAssetId(asset.id)}>
-                  <img src={`${apiBaseUrl()}/api/assets/${asset.id}/file`} alt={asset.latestAnalysis?.alt_text ?? asset.kind} />
-                  <span><strong>{assetStatusLabel(asset.status)}</strong><small>{asset.provider ?? "unknown provider"} · {formatDate(asset.created_at)}</small></span>
+                  <img src={`${apiBaseUrl()}/api/assets/${asset.id}/file`} alt={safeAssetAltText(asset.latestAnalysis?.alt_text, `Portfolio shot from ${formatDate(asset.created_at)}`)} />
+                  <span><strong>{assetStatusLabel(asset.status)}</strong><small>{formatDate(asset.created_at)}</small></span>
                   {asset.latestAnalysis && <em>{asset.latestAnalysis.identity_match} · {asset.latestAnalysis.identity_score}</em>}
                 </button>
               ))}
@@ -3476,13 +5634,13 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
           )}
         </article>
         <article className="settings-preview asset-detail-panel">
-          <div className="section-heading"><h2>Review</h2></div>
-          {!selectedAsset ? <EmptyState title="No asset selected" body="Select or generate an asset to inspect it." /> : (
+          <div className="section-heading"><h2>Portfolio Review</h2></div>
+          {!selectedAsset ? <EmptyState title="No portfolio shot selected" body="Select or produce a shot to inspect it." /> : (
             <div className="asset-detail">
-              <img src={`${apiBaseUrl()}/api/assets/${selectedAsset.id}/file`} alt={selectedAsset.latestAnalysis?.alt_text ?? "Generated asset"} />
+              <img src={`${apiBaseUrl()}/api/assets/${selectedAsset.id}/file`} alt={safeAssetAltText(selectedAsset.latestAnalysis?.alt_text, "Selected portfolio shot")} />
               <div className="score-row">
                 <span className={statusClass(selectedAsset.status)}>{assetStatusLabel(selectedAsset.status)}</span>
-                <span>{selectedAsset.provider}</span>
+                <span>{formatDate(selectedAsset.created_at)}</span>
               </div>
               {selectedAsset.latestAnalysis ? (
                 <div className="analysis-panel">
@@ -3499,15 +5657,15 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
                   <small>Platform fit: {selectedAsset.latestAnalysis.platform_fit.join(", ") || "Not scored"}</small>
                   <small>Recommended: {selectedAsset.latestAnalysis.recommended_action}</small>
                 </div>
-              ) : <EmptyState title="No analysis" body="Analyze this asset to see identity, quality, and platform-fit scores." />}
+              ) : <EmptyState title="No quality review" body="Review this shot to see identity, quality, and platform-fit scores." />}
               <div className="asset-review-command">
                 <button className={!selectedAnalysis ? "primary-action" : ""} type="button" onClick={() => analyzeAsset(selectedAsset.id)}>
-                  {selectedAnalysis ? "Re-analyze" : "Analyze"}
+                  {selectedAnalysis ? "Review Quality Again" : "Review Quality"}
                 </button>
                 <button className={selectedAnalysis ? "primary-action" : ""} type="button" onClick={() => reviewAsset(selectedAsset.id, "approved_post_asset")} disabled={Boolean(assetReviewPending)} aria-busy={assetReviewPending === "approved_post_asset"}>
-                  {assetReviewPending === "approved_post_asset" ? "Approving" : selectedAsset.status === "approved_post_asset" ? "Approved post asset" : "Approve post asset"}
+                  {assetReviewPending === "approved_post_asset" ? "Approving" : selectedAsset.status === "approved_post_asset" ? "Approved for publishing" : "Approve for Publishing"}
                 </button>
-                <button type="button" onClick={() => createDraftFromAsset(selectedAsset.id)} disabled={selectedAsset.status !== "approved_post_asset" || Boolean(assetReviewPending)}>Create draft</button>
+                <button type="button" onClick={() => createDraftFromAsset(selectedAsset.id)} disabled={selectedAsset.status !== "approved_post_asset" || Boolean(assetReviewPending)}>Create Social Package</button>
                 <button type="button" onClick={() => regenerateAsset(selectedAsset.id)} disabled={!selectedAsset.prompt_recipe_id}>Regenerate</button>
               </div>
               <details className="editor-drawer asset-decision-drawer">
@@ -3520,7 +5678,7 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
                 </div>
               </details>
               <details className="raw-details">
-                <summary>Prompt</summary>
+                <summary>Creative treatment source</summary>
                 <pre>{selectedAsset.original_prompt}</pre>
               </details>
               {selectedAnalyses.length > 1 && <small>{selectedAnalyses.length} analyses stored for this asset.</small>}
@@ -3533,10 +5691,14 @@ function AssetLibraryPage({ data, navigate }: { data: AppData; navigate: (path: 
 }
 
 function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
-  const [status, setStatus] = useState(() => readDraftRouteState().status);
+  const [queueFilter, setQueueFilter] = useState<ReviewDecisionType | "all">(() => {
+    const reviewType = readReviewRouteState().type;
+    return readDraftRouteState().status ? "social_package" : reviewType;
+  });
   const [drafts, setDrafts] = useState<Draft[]>([]);
-  const [allDrafts, setAllDrafts] = useState<Draft[]>([]);
-  const [selectedDraftId, setSelectedDraftId] = useState("");
+  const [assets, setAssets] = useState<ImageAsset[]>([]);
+  const [characterDetails, setCharacterDetails] = useState<CharacterDetail[]>([]);
+  const [selectedDecisionId, setSelectedDecisionId] = useState("");
   const [selectedPlatform, setSelectedPlatform] = useState("instagram");
   const [variantDraft, setVariantDraft] = useState({
     caption: "",
@@ -3554,7 +5716,22 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
   const [error, setError] = useState<string | null>(null);
   const [draftActionPending, setDraftActionPending] = useState<string | null>(null);
   const [copyEditorOpen, setCopyEditorOpen] = useState(false);
-  const selectedDraft = drafts.find((draft) => draft.id === selectedDraftId) ?? drafts[0] ?? null;
+  const [reviewReason, setReviewReason] = useState("");
+  const packetCharacters = characterDetails.length ? characterDetails : data.characters;
+  const decisionPackets = buildReviewDecisionPackets({
+    characters: packetCharacters,
+    drafts,
+    assets,
+    runs: data.runs
+  });
+  const filteredDecisionPackets = queueFilter === "all" ? decisionPackets : decisionPackets.filter((packet) => packet.type === queueFilter);
+  const selectedDecision = filteredDecisionPackets.find((packet) => packet.id === selectedDecisionId) ?? filteredDecisionPackets[0] ?? null;
+  const selectedDraft = selectedDecision?.technicalSource.draftId ? drafts.find((draft) => draft.id === selectedDecision.technicalSource.draftId) ?? null : null;
+  const selectedAsset = selectedDecision?.technicalSource.assetId ? assets.find((asset) => asset.id === selectedDecision.technicalSource.assetId) ?? selectedDraft?.asset ?? null : null;
+  const selectedRun = selectedDecision?.technicalSource.runId ? data.runs.find((run) => run.id === selectedDecision.technicalSource.runId) ?? null : null;
+  const selectedProposal = selectedDecision?.technicalSource.proposalId
+    ? characterDetails.flatMap((character) => character.identityProposals).find((proposal) => proposal.id === selectedDecision.technicalSource.proposalId) ?? null
+    : null;
   const selectedVariant = selectedDraft?.variants?.find((variant) => variant.platform === selectedPlatform) ?? selectedDraft?.variants?.[0] ?? null;
   const variantDirty = Boolean(
     selectedVariant &&
@@ -3566,9 +5743,13 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
         variantDraft.aiGenerated !== Boolean(selectedVariant.ai_generated_flag) ||
         variantDraft.paidPartnership !== Boolean(selectedVariant.paid_partnership_flag) ||
         variantDraft.brandContent !== Boolean(selectedVariant.brand_content_flag))
-  );
+	  );
 
   useEffect(() => {
+    if (selectedDraft?.variants?.length && !selectedDraft.variants.some((variant) => variant.platform === selectedPlatform)) {
+      setSelectedPlatform(selectedDraft.variants[0].platform);
+      return;
+    }
     if (!selectedVariant) {
       setVariantDraft({
         caption: "",
@@ -3594,32 +5775,51 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
     });
   }, [selectedVariant?.id]);
 
-  async function load(nextStatus = status) {
-    const params = new URLSearchParams();
-    if (nextStatus) params.set("status", nextStatus);
-    const [response, allResponse] = await Promise.all([
-      fetch(`${apiBaseUrl()}/api/drafts${params.size ? `?${params}` : ""}`),
-      params.size ? fetch(`${apiBaseUrl()}/api/drafts`) : null
+  async function loadReviewData() {
+    const characterIds = data.characters.map((character) => character.id);
+    const [draftResponse, assetResponse, detailResponses] = await Promise.all([
+      fetch(`${apiBaseUrl()}/api/drafts`),
+      fetch(`${apiBaseUrl()}/api/assets`),
+      Promise.all(characterIds.map((id) => fetch(`${apiBaseUrl()}/api/characters/${id}`)))
     ]);
-    if (!response.ok || (allResponse && !allResponse.ok)) throw new Error("Unable to load drafts.");
-    const payload = (await response.json()) as { drafts: Draft[] };
-    const allPayload = allResponse ? ((await allResponse.json()) as { drafts: Draft[] }) : payload;
-    setDrafts(payload.drafts);
-    setAllDrafts(allPayload.drafts);
-    setSelectedDraftId((current) => (payload.drafts.some((draft) => draft.id === current) ? current : payload.drafts[0]?.id ?? ""));
+    if (!draftResponse.ok || !assetResponse.ok || detailResponses.some((response) => !response.ok)) {
+      throw new Error("Unable to load Review Desk decisions.");
+    }
+    const [draftPayload, assetPayload, detailPayloads] = await Promise.all([
+      draftResponse.json() as Promise<{ drafts: Draft[] }>,
+      assetResponse.json() as Promise<{ assets: ImageAsset[] }>,
+      Promise.all(detailResponses.map((response) => response.json() as Promise<{ character: CharacterDetail }>))
+    ]);
+    const nextCharacterDetails = detailPayloads.map((payload) => payload.character);
+    const nextPackets = buildReviewDecisionPackets({
+      characters: nextCharacterDetails.length ? nextCharacterDetails : data.characters,
+      drafts: draftPayload.drafts,
+      assets: assetPayload.assets,
+      runs: data.runs
+    });
+    setDrafts(draftPayload.drafts);
+    setAssets(assetPayload.assets);
+    setCharacterDetails(nextCharacterDetails);
+    setSelectedDecisionId((current) => {
+      const nextVisible = queueFilter === "all" ? nextPackets : nextPackets.filter((packet) => packet.type === queueFilter);
+      return nextVisible.some((packet) => packet.id === current) ? current : nextVisible[0]?.id ?? "";
+    });
   }
 
+  const characterIdsKey = data.characters.map((character) => character.id).join("|");
+  const runReviewKey = data.runs.map((run) => `${run.id}:${run.status}:${run.updated_at}`).join("|");
+
   useEffect(() => {
-    load().catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load drafts."));
-  }, []);
+    loadReviewData().catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load Review Desk decisions."));
+  }, [characterIdsKey, runReviewKey, queueFilter]);
 
   async function updateVariant(patch: Partial<PlatformVariant>) {
     if (!selectedVariant) return;
     setError(null); setMessage(null);
     try {
       await patchJson(`/api/platform-variants/${selectedVariant.id}`, patch);
-      setMessage("Variant saved.");
-      await load();
+      setMessage("Platform copy saved.");
+      await loadReviewData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to save variant.");
     }
@@ -3639,50 +5839,48 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
     });
   }
 
-  async function reviewDraft(statusValue: string, reason = "Manual Output Review action.", successMessage?: string, pendingKey = statusValue) {
-    if (!selectedDraft) return;
+  async function reviewDraftPacket(draft: Draft, statusValue: string, reason = "Manual Review Desk action.", successMessage?: string, pendingKey = statusValue) {
     setError(null); setMessage(null);
     setDraftActionPending(pendingKey);
     try {
-      await patchJson(`/api/drafts/${selectedDraft.id}`, { status: statusValue, reason });
-      setMessage(successMessage ?? `Output marked ${statusValue}.`);
-      await load();
+      await patchJson(`/api/drafts/${draft.id}`, { status: statusValue, reason });
+      setMessage(successMessage ?? `Social package marked ${statusValue.replaceAll("_", " ")}.`);
+      await loadReviewData();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to review draft.");
+      setError(caught instanceof Error ? caught.message : "Unable to review social package.");
     } finally {
       setDraftActionPending(null);
     }
   }
 
-  async function exportDraft() {
-    if (!selectedDraft) return;
+  async function exportDraftPacket(draft: Draft) {
     setError(null); setMessage(null);
     setDraftActionPending("export");
     try {
-      await postJson<{ package: PublishingPackage }>(`/api/drafts/${selectedDraft.id}/export`, {});
-      setMessage("Export package created.");
-      await load();
+      await postJson<{ package: PublishingPackage }>(`/api/drafts/${draft.id}/export`, {});
+      setMessage("Placement package prepared.");
+      await loadReviewData();
     } catch (caught) {
-      setError(caught instanceof Error ? caught.message : "Unable to export draft.");
+      setError(caught instanceof Error ? caught.message : "Unable to prepare placement package.");
     } finally {
       setDraftActionPending(null);
     }
   }
 
-  async function publishDraft() {
-    if (!selectedDraft || !selectedVariant) return;
+  async function publishDraftPacket(draft: Draft, variant: PlatformVariant | null) {
+    if (!variant) return;
     setError(null); setMessage(null);
     setDraftActionPending("publish");
     try {
-      await postJson(`/api/drafts/${selectedDraft.id}/publish`, {
-        platform: selectedVariant.platform,
+      await postJson(`/api/drafts/${draft.id}/publish`, {
+        platform: variant.platform,
         liveUrl: publishUrl || null,
         notes: publishNotes || "Manual publishing ledger update."
       });
       setMessage("Publishing ledger updated.");
       setPublishUrl("");
       setPublishNotes("");
-      await load();
+      await loadReviewData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to mark published.");
     } finally {
@@ -3690,222 +5888,288 @@ function DraftReviewDesk({ data, navigate }: { data: AppData; navigate: (path: s
     }
   }
 
-  const characterName = (id: string) => {
-    const character = data.characters.find((item) => item.id === id);
-    return character ? displayModelName(character.name) : "Unknown character";
-  };
-  const draftStatusOptions = ["needs_review", "approved", "rejected", "exported", "published"];
-  const draftCounts = draftStatusOptions.map((value) => ({
-    value,
-    count: allDrafts.filter((draft) => draft.status === value).length
-  }));
-  const reviewSummary = data.workflowSummary.find((stage) => stage.id === "review");
-  const runReviewCount = data.runs.filter((run) => run.status === "needs_review").length;
-  const reviewQueues = [
-    { label: "Drafts", count: allDrafts.filter((draft) => draft.status === "needs_review").length, detail: "copy and package decisions", path: "/drafts?status=needs_review" },
-    { label: "Automations", count: runReviewCount, detail: "human gates", path: "/runs?status=needs_review" },
-    { label: "Talent", count: Math.max((reviewSummary?.count ?? 0) - runReviewCount - allDrafts.filter((draft) => draft.status === "needs_review").length, 0), detail: "proposal review", path: "/talent" }
-  ];
-  const publishEvent = selectedDraft?.publishingEvents?.find((event) => event.published_at || event.status === "published");
-  const hasExport = Boolean(selectedDraft?.packages?.length);
-  const draftStage = selectedDraft?.status ?? "";
-  const canReviewDraft = draftStage === "needs_review";
-  const canExportDraft = draftStage === "approved";
-  const canPublishDraft = draftStage === "exported" || hasExport;
-  const recommendation = outputRecommendation(selectedDraft, selectedVariant);
-  const reviewReasons = outputReviewReasons(selectedDraft, selectedVariant);
-  const whatHappened = outputReviewHappened(selectedDraft, selectedVariant);
-  const decisionPrompt = outputDecisionPrompt(selectedDraft);
-  const nextStep = outputNextStep(selectedDraft, hasExport, publishEvent);
-  const stageActionLabel = !selectedDraft
-    ? "Select draft"
-    : canReviewDraft
-      ? "Approve or reject"
-      : canExportDraft
-        ? "Export package"
-        : canPublishDraft && !publishEvent
-          ? "Ledger publish"
-          : "Complete";
-  const approvalStages = [
-    {
-      label: "Review",
-      detail: selectedDraft ? selectedDraft.status.replaceAll("_", " ") : "None",
-      complete: Boolean(selectedDraft && ["approved", "exported", "published"].includes(selectedDraft.status)),
-      active: selectedDraft?.status === "needs_review"
-    },
-    {
-      label: "Variants",
-      detail: selectedDraft?.variants?.length ? `${selectedDraft.variants.length} variants` : "None",
-      complete: Boolean(selectedDraft?.variants?.length),
-      active: selectedDraft?.status === "approved"
-    },
-    {
-      label: "Export",
-      detail: hasExport ? "Ready" : "Pending",
-      complete: hasExport,
-      active: selectedDraft?.status === "exported"
-    },
-    {
-      label: "Publish",
-      detail: publishEvent ? "Ledgered" : "Pending",
-      complete: Boolean(publishEvent || selectedDraft?.status === "published"),
-      active: selectedDraft?.status === "published"
+  async function analyzeAssetPacket(asset: ImageAsset) {
+    setError(null); setMessage(null);
+    setDraftActionPending("quality");
+    try {
+      await postJson(`/api/assets/${asset.id}/analyze`, {});
+      setMessage("Quality review added to the decision packet.");
+      await loadReviewData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to review portfolio shot quality.");
+    } finally {
+      setDraftActionPending(null);
     }
+  }
+
+  async function reviewAssetPacket(asset: ImageAsset, statusValue: string, successMessage: string) {
+    setError(null); setMessage(null);
+    setDraftActionPending(statusValue);
+    try {
+      await postJson(`/api/assets/${asset.id}/review`, { status: statusValue, reason: reviewReason || `Review Desk marked shot ${statusValue.replaceAll("_", " ")}.` });
+      setMessage(successMessage);
+      await loadReviewData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to review portfolio shot.");
+    } finally {
+      setDraftActionPending(null);
+    }
+  }
+
+  async function requestAssetRevision(asset: ImageAsset) {
+    setError(null); setMessage(null);
+    setDraftActionPending("revision");
+    try {
+      if (asset.prompt_recipe_id) {
+        await postJson<{ asset: ImageAsset }>(`/api/assets/${asset.id}/regenerate`, {});
+        setMessage("Revision requested. A new candidate shot was generated from treatment fixes.");
+      } else {
+        await postJson(`/api/assets/${asset.id}/review`, { status: "rejected_quality", reason: reviewReason || "Revision requested from Review Desk." });
+        setMessage("Revision requested. Shot kept out of the portfolio queue.");
+      }
+      await loadReviewData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to request revision.");
+    } finally {
+      setDraftActionPending(null);
+    }
+  }
+
+  async function reviewCareerProposal(statusValue: "approved" | "rejected") {
+    if (!selectedProposal) return;
+    setError(null); setMessage(null);
+    setDraftActionPending(`proposal:${statusValue}`);
+    try {
+      await postJson(`/api/identity-proposals/${selectedProposal.id}/review`, {
+        status: statusValue,
+        constitutionChangeReason: selectedProposal.kind === "constitution_patch" ? "Approved from Review Desk." : undefined
+      });
+      setMessage(statusValue === "approved" ? "Career update approved." : "Career update rejected.");
+      await loadReviewData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to review career update.");
+    } finally {
+      setDraftActionPending(null);
+    }
+  }
+
+  async function handlePrimaryDecision() {
+    if (!selectedDecision) return;
+    if (selectedDecision.type === "portfolio_candidate" && selectedAsset) {
+      if (!selectedAsset.latestAnalysis) {
+        await analyzeAssetPacket(selectedAsset);
+        return;
+      }
+      await reviewAssetPacket(selectedAsset, "approved_post_asset", "Portfolio shot approved for publishing.");
+      return;
+    }
+    if (selectedDecision.type === "social_package" && selectedDraft) {
+      if (selectedDraft.status === "approved") {
+        await exportDraftPacket(selectedDraft);
+        return;
+      }
+      if (selectedDraft.status === "exported") {
+        await publishDraftPacket(selectedDraft, selectedVariant);
+        return;
+      }
+      await reviewDraftPacket(selectedDraft, "approved", "Approved from Review Desk.", "Social package approved.", "approved");
+      return;
+    }
+    if (selectedDecision.type === "career_direction") {
+      await reviewCareerProposal("approved");
+      return;
+    }
+    if (selectedDecision.type === "studio_attention" && selectedRun) {
+      navigate(`/runs/${selectedRun.id}`);
+    }
+  }
+
+  const decisionCounts: Array<{ type: ReviewDecisionType | "all"; label: string; detail: string; count: number }> = [
+    { type: "all", label: "Decision Queue", detail: "all director actions", count: decisionPackets.length },
+    { type: "portfolio_candidate", label: "Portfolio", detail: "candidate shots", count: decisionPackets.filter((packet) => packet.type === "portfolio_candidate").length },
+    { type: "social_package", label: "Social Packages", detail: "approval and placement", count: decisionPackets.filter((packet) => packet.type === "social_package").length },
+    { type: "career_direction", label: "Career Updates", detail: "identity learning", count: decisionPackets.filter((packet) => packet.type === "career_direction").length },
+    { type: "studio_attention", label: "Studio Attention", detail: "production gates", count: decisionPackets.filter((packet) => packet.type === "studio_attention").length }
   ];
 
   return (
     <>
-      <header className="topbar page-heading"><div><h1>Review</h1></div></header>
+      <header className="topbar page-heading"><div><h1>Review Desk</h1></div></header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
       <StageHandoff data={data} stageId="review" navigate={navigate} />
-      <section className="review-queue-overview" aria-label="Unified review gates">
-        {reviewQueues.map((queue) => (
-          <button key={queue.label} type="button" onClick={() => navigate(queue.path)}>
+      <section className="review-queue-overview decision-filter-row" aria-label="Decision queue filters">
+        {decisionCounts.map((queue) => (
+          <button
+            className={queueFilter === queue.type ? "active" : ""}
+            key={queue.type}
+            type="button"
+            onClick={() => {
+              setQueueFilter(queue.type);
+              replaceRouteQuery("/review", { type: queue.type === "all" ? null : queue.type });
+            }}
+          >
             <span>{queue.label}</span>
             <strong>{queue.count}</strong>
             <small>{queue.detail}</small>
           </button>
         ))}
       </section>
-      <section className="approval-cockpit" aria-label="Draft approval cockpit">
+      <section className="review-decision-command" aria-label="Selected decision summary">
         <article className="review-command review-command-compact">
-          <span>Selected draft</span>
-          <strong>{selectedDraft ? selectedDraft.status.replaceAll("_", " ") : "None"}</strong>
-          <p>{selectedDraft ? selectedDraft.title : "Select a draft."}</p>
+          <span>Selected decision</span>
+          <strong>{selectedDecision ? reviewTypeLabel(selectedDecision.type) : "Clear"}</strong>
+          <p>{selectedDecision ? selectedDecision.recommendation : "Nothing needs approval right now."}</p>
         </article>
-        <article className="stage-track">
-          {approvalStages.map((stage) => (
-            <div className={stage.complete ? "stage-step complete" : stage.active ? "stage-step active" : "stage-step"} key={stage.label}>
-              <span aria-hidden="true" />
-              <strong>{stage.label}</strong>
-              <small>{stage.detail}</small>
+        <article className="decision-next-step">
+          <span>What happens next</span>
+          <strong>{selectedDecision ? selectedDecision.consequence : "The agency can return to booking, portfolio, or roster work."}</strong>
+        </article>
+      </section>
+      <section className="review-decision-workbench">
+        <article className="settings-preview decision-queue-panel">
+          <div className="section-heading"><h2>Decision Queue</h2><span>{filteredDecisionPackets.length}</span></div>
+          {filteredDecisionPackets.length === 0 ? (
+            <div className="review-clear-state">
+              <EmptyState title="Nothing needs approval" body="The Review Desk is clear." />
+              <div className="button-stack">
+                <button type="button" onClick={() => navigate("/talent")}>Open Roster</button>
+                <button className="primary-action" type="button" onClick={() => navigate("/prompt-studio")}>Book New Work</button>
+              </div>
             </div>
-          ))}
+          ) : (
+            <div className="compact-list decision-list">
+              {filteredDecisionPackets.map((packet) => (
+                <button key={packet.id} className={`run-row${selectedDecision?.id === packet.id ? " selected" : ""}`} type="button" onClick={() => setSelectedDecisionId(packet.id)}>
+                  <span>
+                    <strong>{packet.title}</strong>
+                    <small>{reviewTypeLabel(packet.type)} · {packet.statusLabel}</small>
+                  </span>
+                  {packet.previewImageAssetId ? (
+                    <img src={`${apiBaseUrl()}/api/assets/${packet.previewImageAssetId}/file`} alt={packet.previewAlt} />
+                  ) : (
+                    <em>{packet.talentName}</em>
+                  )}
+                </button>
+              ))}
+            </div>
+          )}
         </article>
-      </section>
-      <section className="status-lane" aria-label="Draft status filters">
-        <button className={!status ? "active" : ""} type="button" onClick={() => { setStatus(""); replaceRouteQuery("/drafts", { status: null }); load("").catch(() => undefined); }}>
-          <strong>{allDrafts.length}</strong>
-          <span>All drafts</span>
-        </button>
-        {draftCounts.map((item) => (
-          <button className={status === item.value ? "active" : ""} key={item.value} type="button" onClick={() => { setStatus(item.value); replaceRouteQuery("/drafts", { status: item.value }); load(item.value).catch(() => undefined); }}>
-            <strong>{item.count}</strong>
-            <span>{item.value.replaceAll("_", " ")}</span>
-          </button>
-        ))}
-      </section>
-      <section className="draft-workbench">
-        <article className="settings-preview">
-          <div className="section-heading"><h2>Drafts</h2><span>{drafts.length}</span></div>
-          {drafts.length === 0 ? <EmptyState title="No drafts" body="Approve an asset in the Asset Library, then create a draft package." /> : <div className="compact-list draft-list">{drafts.map((draft) => (
-            <button key={draft.id} className={`run-row${selectedDraft?.id === draft.id ? " selected" : ""}`} type="button" onClick={() => setSelectedDraftId(draft.id)}>
-              <span><strong>{draft.title}</strong><small>{characterName(draft.character_id)} · {draft.status.replaceAll("_", " ")}</small></span>
-              {draft.asset && <img src={`${apiBaseUrl()}/api/assets/${draft.asset.id}/file`} alt={draft.asset.latestAnalysis?.alt_text ?? draft.title} />}
-            </button>
-          ))}</div>}
-        </article>
-        <article className="settings-preview draft-detail-panel output-review-panel">
-          <div className="section-heading"><h2>Output Review</h2></div>
-          {!selectedDraft ? <EmptyState title="No output selected" body="Select an output to review." /> : (
+        <article className="settings-preview draft-detail-panel output-review-panel selected-decision-panel">
+          <div className="section-heading"><h2>Selected Decision</h2></div>
+          {!selectedDecision ? <EmptyState title="No decision selected" body="The Review Desk is clear." /> : (
             <div className="asset-detail output-review-detail">
-              <div className="score-row"><span className={statusClass(selectedDraft.status)}>{selectedDraft.status.replaceAll("_", " ")}</span><span>{characterName(selectedDraft.character_id)}</span></div>
-              {selectedDraft.asset ? (
-                <img className="review-asset-preview" src={`${apiBaseUrl()}/api/assets/${selectedDraft.asset.id}/file`} alt={selectedDraft.asset.latestAnalysis?.alt_text ?? selectedDraft.title} />
+              <div className="score-row">
+                <span className={statusClass(selectedDecision.type)}>{reviewTypeLabel(selectedDecision.type)}</span>
+                <span>{selectedDecision.talentName}</span>
+              </div>
+              {selectedDecision.previewImageAssetId ? (
+                <img className="review-asset-preview" src={`${apiBaseUrl()}/api/assets/${selectedDecision.previewImageAssetId}/file`} alt={selectedDecision.previewAlt} />
               ) : (
-                <EmptyState title="No asset preview" body="This output has copy only." />
-              )}
-              <div className="review-decision-packet">
-                <div className="review-packet-item">
-                  <span>What happened?</span>
-                  <p>{whatHappened}</p>
+                <div className="decision-text-preview">
+                  <span>{reviewTypeLabel(selectedDecision.type)}</span>
+                  <strong>{selectedDecision.statusLabel}</strong>
+                  <p>{selectedDecision.summary}</p>
                 </div>
+              )}
+              <div className="decision-packet-heading">
+                <span>What is this?</span>
+                <h2>{selectedDecision.title}</h2>
+                <p>{selectedDecision.summary}</p>
+              </div>
+              <div className="review-decision-packet decision-packet-grid">
                 <div className="review-packet-item review-packet-recommendation">
-                  <span>What does it recommend?</span>
-                  <strong>{recommendation}</strong>
+                  <span>Recommendation</span>
+                  <strong>{selectedDecision.recommendation}</strong>
                 </div>
                 <div className="review-packet-item review-packet-reasons">
-                  <span>Why?</span>
+                  <span>Why</span>
                   <ul>
-                    {reviewReasons.map((reason) => <li key={reason}>{reason}</li>)}
+                    {selectedDecision.why.map((reason) => <li key={reason}>{reason}</li>)}
                   </ul>
                 </div>
                 <div className="review-packet-item">
-                  <span>What do I need to decide?</span>
-                  <p>{decisionPrompt}</p>
+                  <span>Risk</span>
+                  <p>{selectedDecision.risk}</p>
                 </div>
                 <div className="review-packet-item">
-                  <span>What happens next?</span>
-                  <p>{nextStep}</p>
+                  <span>What happens next</span>
+                  <p>{selectedDecision.consequence}</p>
                 </div>
               </div>
-              <div className="draft-primary-actions review-actions" aria-label={stageActionLabel}>
-                {canReviewDraft && (
+              <div className="draft-primary-actions review-actions" aria-label="Director actions">
+                <button className="primary-action" type="button" onClick={handlePrimaryDecision} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "approved" || draftActionPending === "quality" || draftActionPending === "export" || draftActionPending === "publish" || draftActionPending === "proposal:approved"}>
+                  {draftActionPending ? "Working" : selectedDecision.primaryActionLabel}
+                </button>
+                {selectedDecision.type === "portfolio_candidate" && selectedAsset?.latestAnalysis && (
                   <>
-                    <button className="primary-action" type="button" onClick={() => reviewDraft("approved", "Approved from Output Review.", "Output approved.")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "approved"}>{draftActionPending === "approved" ? "Approving" : "Approve"}</button>
-                    <button type="button" onClick={() => reviewDraft("rejected", "Revision requested from Output Review.", "Revision requested.", "revision")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "revision"}>{draftActionPending === "revision" ? "Requesting" : "Request revision"}</button>
-                    <button type="button" onClick={() => reviewDraft("rejected", "Rejected from Output Review.", "Output rejected.")} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "rejected"}>{draftActionPending === "rejected" ? "Rejecting" : "Reject"}</button>
+                    <button type="button" onClick={() => reviewAssetPacket(selectedAsset, "approved_reference", "Portfolio shot added as an identity anchor.")} disabled={Boolean(draftActionPending)}>Add to Portfolio</button>
+                    <button type="button" onClick={() => requestAssetRevision(selectedAsset)} disabled={Boolean(draftActionPending)}>Request Revision</button>
+                    <button type="button" onClick={() => reviewAssetPacket(selectedAsset, "rejected_quality", "Portfolio shot rejected.")} disabled={Boolean(draftActionPending)}>Reject</button>
                   </>
                 )}
-                {canExportDraft && (
-                  <button className="primary-action" type="button" onClick={exportDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "export"}>{draftActionPending === "export" ? "Exporting" : "Export package"}</button>
+                {selectedDecision.type === "portfolio_candidate" && selectedAsset && !selectedAsset.latestAnalysis && (
+                  <button type="button" onClick={() => navigate("/library")}>Open Portfolio</button>
                 )}
-                {canPublishDraft && !publishEvent && (
-                  <button className="primary-action" type="button" onClick={publishDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "publish"}>{draftActionPending === "publish" ? "Publishing" : "Mark published"}</button>
+                {selectedDecision.type === "social_package" && selectedDraft && (
+                  <>
+                    <button type="button" onClick={() => setCopyEditorOpen(true)}>Edit Copy</button>
+                    {selectedDraft.status === "needs_review" && <button type="button" onClick={() => reviewDraftPacket(selectedDraft, "rejected", "Revision requested from Review Desk.", "Revision requested.", "revision")} disabled={Boolean(draftActionPending)}>Request Revision</button>}
+                    {selectedDraft.status === "needs_review" && <button type="button" onClick={() => reviewDraftPacket(selectedDraft, "rejected", "Rejected from Review Desk.", "Social package rejected.", "rejected")} disabled={Boolean(draftActionPending)}>Reject</button>}
+                    {selectedDraft.status !== "needs_review" && <button type="button" onClick={() => navigate("/calendar")}>Open Publishing</button>}
+                  </>
                 )}
-                {publishEvent && <button type="button" onClick={() => navigate("/calendar")}>Open ledger</button>}
-                <button type="button" onClick={() => setCopyEditorOpen(true)}>Edit caption</button>
+                {selectedDecision.type === "career_direction" && (
+                  <button type="button" onClick={() => reviewCareerProposal("rejected")} disabled={Boolean(draftActionPending)}>Reject</button>
+                )}
+                {selectedDecision.type === "studio_attention" && (
+                  <button type="button" onClick={() => navigate("/settings")}>Open Studio Ops</button>
+                )}
               </div>
-              <details className="editor-drawer review-supporting-details">
-                <summary>Supporting details</summary>
-                <div className="review-supporting-grid">
-                  <div><span>Status</span><strong>{selectedDraft.status.replaceAll("_", " ")}</strong></div>
-                  <div><span>Character</span><strong>{characterName(selectedDraft.character_id)}</strong></div>
-                  <div><span>Platform</span><strong>{selectedVariant ? platformLabel(selectedVariant.platform) : "Not selected"}</strong></div>
-                  <div><span>Summary</span><strong>{selectedDraft.summary ?? "No summary"}</strong></div>
-                </div>
-                {selectedDraft.asset?.latestAnalysis && (
-                  <div className="analysis-panel">
-                    <strong>Analysis summary</strong>
-                    <p>{selectedDraft.asset.latestAnalysis.identity_match} identity match · identity {selectedDraft.asset.latestAnalysis.identity_score} · quality {selectedDraft.asset.latestAnalysis.quality_score} · story fit {selectedDraft.asset.latestAnalysis.story_fit_score}</p>
+              {selectedDecision.type === "portfolio_candidate" && selectedAsset && (
+                <details className="editor-drawer asset-decision-drawer">
+                  <summary>Decision note</summary>
+                  <label>Review reason<textarea value={reviewReason} onChange={(event) => setReviewReason(event.target.value)} placeholder="Optional note for the review log" /></label>
+                </details>
+              )}
+              {selectedDecision.type === "social_package" && selectedDraft && (
+                <details className="editor-drawer draft-variant-drawer" open={copyEditorOpen} onToggle={(event) => setCopyEditorOpen(event.currentTarget.open)}>
+                  <summary>Caption and platform copy</summary>
+                  <div className="tab-row">{selectedDraft.variants?.map((variant) => (
+                    <button key={variant.id} type="button" className={variant.platform === selectedPlatform ? "selected" : ""} onClick={() => setSelectedPlatform(variant.platform)}>
+                      <span className={`platform-inline ${platformClass(variant.platform)}`}>{platformIcon(variant.platform, 14)}{platformLabel(variant.platform)}</span>
+                    </button>
+                  ))}</div>
+                  {selectedVariant && <div className="form-stack">
+                    <label>Caption<textarea value={variantDraft.caption} onChange={(event) => setVariantDraft({ ...variantDraft, caption: event.target.value })} /></label>
+                    <label>Hashtags<input value={variantDraft.hashtags} onChange={(event) => setVariantDraft({ ...variantDraft, hashtags: event.target.value })} /></label>
+                    <label>Alt text<textarea value={variantDraft.altText} onChange={(event) => setVariantDraft({ ...variantDraft, altText: event.target.value })} /></label>
+                    <label>Disclosure<textarea value={variantDraft.disclosureText} onChange={(event) => setVariantDraft({ ...variantDraft, disclosureText: event.target.value })} /></label>
+                    <label>Readiness notes<textarea value={variantDraft.notes} onChange={(event) => setVariantDraft({ ...variantDraft, notes: event.target.value })} /></label>
+                    <label className="checkbox-row"><input type="checkbox" checked={variantDraft.aiGenerated} onChange={(event) => setVariantDraft({ ...variantDraft, aiGenerated: event.target.checked })} /> AI-generated</label>
+                    <label className="checkbox-row"><input type="checkbox" checked={variantDraft.paidPartnership} onChange={(event) => setVariantDraft({ ...variantDraft, paidPartnership: event.target.checked })} /> Paid partnership</label>
+                    <label className="checkbox-row"><input type="checkbox" checked={variantDraft.brandContent} onChange={(event) => setVariantDraft({ ...variantDraft, brandContent: event.target.checked })} /> Brand content</label>
+                    <div className="form-footer">
+                      <span>{variantDirty ? "Unsaved" : "Saved"}</span>
+                      <button className="primary-action" type="button" onClick={saveVariantCopy} disabled={!variantDirty}>Save platform copy</button>
+                    </div>
+                  </div>}
+                </details>
+              )}
+              {selectedDecision.type === "social_package" && selectedDraft && (
+                <details className="editor-drawer draft-publish-drawer">
+                  <summary>Live placement ledger</summary>
+                  <div className="form-stack">
+                    <label>Live URL<input value={publishUrl} onChange={(event) => setPublishUrl(event.target.value)} placeholder="https://..." /></label>
+                    <label>Publishing notes<input value={publishNotes} onChange={(event) => setPublishNotes(event.target.value)} /></label>
+                    <button type="button" onClick={() => publishDraftPacket(selectedDraft, selectedVariant)} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "publish"}>{draftActionPending === "publish" ? "Marking live" : "Mark Live"}</button>
                   </div>
-                )}
-              </details>
-              <details className="editor-drawer draft-variant-drawer" open={copyEditorOpen} onToggle={(event) => setCopyEditorOpen(event.currentTarget.open)}>
-                <summary>Caption and platform copy</summary>
-                <div className="tab-row">{selectedDraft.variants?.map((variant) => (
-                  <button key={variant.id} type="button" className={variant.platform === selectedPlatform ? "selected" : ""} onClick={() => setSelectedPlatform(variant.platform)}>
-                    <span className={`platform-inline ${platformClass(variant.platform)}`}>{platformIcon(variant.platform, 14)}{platformLabel(variant.platform)}</span>
-                  </button>
-                ))}</div>
-                {selectedVariant && <div className="form-stack">
-                  <label>Caption<textarea value={variantDraft.caption} onChange={(event) => setVariantDraft({ ...variantDraft, caption: event.target.value })} /></label>
-                  <label>Hashtags<input value={variantDraft.hashtags} onChange={(event) => setVariantDraft({ ...variantDraft, hashtags: event.target.value })} /></label>
-                  <label>Alt text<textarea value={variantDraft.altText} onChange={(event) => setVariantDraft({ ...variantDraft, altText: event.target.value })} /></label>
-                  <label>Disclosure<textarea value={variantDraft.disclosureText} onChange={(event) => setVariantDraft({ ...variantDraft, disclosureText: event.target.value })} /></label>
-                  <label>Readiness notes<textarea value={variantDraft.notes} onChange={(event) => setVariantDraft({ ...variantDraft, notes: event.target.value })} /></label>
-                  <label className="checkbox-row"><input type="checkbox" checked={variantDraft.aiGenerated} onChange={(event) => setVariantDraft({ ...variantDraft, aiGenerated: event.target.checked })} /> AI-generated</label>
-                  <label className="checkbox-row"><input type="checkbox" checked={variantDraft.paidPartnership} onChange={(event) => setVariantDraft({ ...variantDraft, paidPartnership: event.target.checked })} /> Paid partnership</label>
-                  <label className="checkbox-row"><input type="checkbox" checked={variantDraft.brandContent} onChange={(event) => setVariantDraft({ ...variantDraft, brandContent: event.target.checked })} /> Brand content</label>
-                  <div className="form-footer">
-                    <span>{variantDirty ? "Unsaved" : "Saved"}</span>
-                    <button className="primary-action" type="button" onClick={saveVariantCopy} disabled={!variantDirty}>Save platform copy</button>
-                  </div>
-                </div>}
-              </details>
-              <details className="editor-drawer draft-publish-drawer">
-                <summary>Publishing ledger</summary>
-                <div className="form-stack">
-                  <label>Live URL<input value={publishUrl} onChange={(event) => setPublishUrl(event.target.value)} placeholder="https://..." /></label>
-                  <label>Publishing notes<input value={publishNotes} onChange={(event) => setPublishNotes(event.target.value)} /></label>
-                  <button type="button" onClick={publishDraft} disabled={Boolean(draftActionPending)} aria-busy={draftActionPending === "publish"}>{draftActionPending === "publish" ? "Publishing" : "Mark published"}</button>
-                </div>
-                {selectedDraft.packages && selectedDraft.packages.length > 0 && <div className="compact-list"><div><strong>Latest export</strong><small>{selectedDraft.packages[0].files.join(", ")}</small></div></div>}
-              </details>
+                  {selectedDraft.packages && selectedDraft.packages.length > 0 && <div className="compact-list"><div><strong>Latest placement package</strong><small>{selectedDraft.packages[0].files.join(", ")}</small></div></div>}
+                </details>
+              )}
               <details className="raw-details review-debug-drawer">
-                <summary>Debug details</summary>
-                <pre>{JSON.stringify(outputDebugPayload(selectedDraft, selectedVariant), null, 2)}</pre>
+                <summary>Technical audit</summary>
+                <pre>{JSON.stringify(selectedDecision.technicalAudit, null, 2)}</pre>
               </details>
             </div>
           )}
@@ -3974,7 +6238,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
         operatorJudgment: feedbackForm.operatorJudgment
       });
       setLatestFeedbackId(payload.feedback.id);
-      setMessage("Feedback logged.");
+      setMessage("Audience response logged.");
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to log feedback.");
     }
@@ -3984,7 +6248,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
     setError(null); setMessage(null);
     try {
       const payload = await postJson<{ run: RunSummary }>(`/api/feedback/${latestFeedbackId}/reflection-run`, {});
-      setMessage("Reflection run created.");
+      setMessage("Audience debrief started.");
       window.history.pushState({}, "", `/runs/${payload.run.id}`);
       window.dispatchEvent(new PopStateEvent("popstate"));
     } catch (caught) {
@@ -4000,7 +6264,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
   const statusColumnLabels: Record<string, string> = {
     planned: "Plan",
     draft_ready: "Draft",
-    exported: "Export",
+    exported: "Package",
     published: "Live",
     needs_feedback: "Due"
   };
@@ -4073,7 +6337,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
     <>
       <header className="topbar page-heading calendar-topbar">
         <div>
-          <h1>Schedule</h1>
+          <h1>Publishing</h1>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -4145,7 +6409,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
           </section>
           <section className="publishing-ledger-calendar" aria-label="Publishing ledger">
             <div className="ledger-calendar-header">
-              <span>Publishing ledger</span>
+              <span>Publishing calendar</span>
               <strong>{weekLabel}</strong>
               <button type="button" onClick={selectCurrentWindow}>Today</button>
             </div>
@@ -4182,7 +6446,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
           </section>
           <section className="review-queue-strip" aria-label="Review list">
             <div className="section-heading">
-              <h2>Review list ({reviewDrafts.length})</h2>
+              <h2>Review Desk ({reviewDrafts.length})</h2>
               <button type="button" onClick={() => navigate("/drafts")}>View all</button>
             </div>
             <div className="review-card-row">
@@ -4202,7 +6466,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
               <h2>Recent activity</h2>
             </div>
             <table>
-              <thead><tr><th>Run ID</th><th>Status</th><th>Character</th><th>Pipeline</th><th>Trigger</th><th>Started</th><th>Duration</th><th /></tr></thead>
+              <thead><tr><th>Source</th><th>Status</th><th>Talent</th><th>Pipeline</th><th>Trigger</th><th>Started</th><th>Duration</th><th /></tr></thead>
               <tbody>
                 {recentRows.map((draft, index) => (
                   <tr key={draft.id}>
@@ -4213,7 +6477,7 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                     <td>{index % 2 === 0 ? "Schedule" : "Manual"}</td>
                     <td>{formatDate(draft.created_at)}</td>
                     <td>00:0{index + 1}:4{index}</td>
-                    <td><button className="row-action" type="button" aria-label={`Open run ${shortRunId(draft.run_id ?? draft.id)}`}><Command aria-hidden="true" size={16} weight="regular" /></button></td>
+                    <td><button className="row-action" type="button" aria-label={`Open production log ${shortRunId(draft.run_id ?? draft.id)}`}><Command aria-hidden="true" size={16} weight="regular" /></button></td>
                   </tr>
                 ))}
               </tbody>
@@ -4237,15 +6501,15 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                 <em>{selectedEvent.status.replaceAll("_", " ")}</em>
               </div>
               <div className={selectedAsset?.mime_type?.includes("svg") ? "dossier-media dossier-media-generated" : "dossier-media"}>
-                {dossierImageUrl ? <img src={dossierImageUrl} alt={selectedVariant?.alt_text ?? selectedDraft?.title ?? "Publication asset"} /> : <span>VA</span>}
+                {dossierImageUrl ? <img src={dossierImageUrl} alt={safeAssetAltText(selectedVariant?.alt_text, selectedDraft?.title ?? "Publication asset")} /> : <span>VA</span>}
               </div>
               <h2>{selectedDraft?.title ?? (selectedEvent.live_url ? "Live post" : "Ledger entry")}</h2>
               <p>{selectedVariant?.caption ?? selectedEvent.notes ?? "No notes recorded."}</p>
               <dl className="profile-facts calendar-facts">
-                <div><dt>Character</dt><dd>{shortRunId(selectedDraft?.character_id)}</dd></div>
+                <div><dt>Talent</dt><dd>{shortRunId(selectedDraft?.character_id)}</dd></div>
                 <div><dt>Format</dt><dd>{selectedVariant?.post_format ?? "single image"}</dd></div>
                 <div><dt>Tags</dt><dd>{selectedVariant?.hashtags ?? "None"}</dd></div>
-                <div><dt>Source run</dt><dd>{shortRunId(selectedDraft?.run_id ?? selectedEvent.draft_id)}</dd></div>
+                <div><dt>Source log</dt><dd>{shortRunId(selectedDraft?.run_id ?? selectedEvent.draft_id)}</dd></div>
                 <div><dt>Status</dt><dd>{selectedEvent.status.replaceAll("_", " ")}</dd></div>
               </dl>
               <div className="approval-stack">
@@ -4254,11 +6518,11 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
                 <div><span className="approval-dot" /><strong>Publish Approval</strong><small>Pending</small></div>
               </div>
               <div className="draft-primary-actions dossier-actions">
-                <button className="primary-action" type="button" onClick={canLogResponse ? submitFeedback : () => navigate("/drafts")} disabled={!selectedEvent.id}>
-                  {canLogResponse ? "Log response" : "Open review"}
+              <button className="primary-action" type="button" onClick={canLogResponse ? submitFeedback : () => navigate("/drafts")} disabled={!selectedEvent.id}>
+                  {canLogResponse ? "Log Audience Response" : "Open Review Desk"}
                 </button>
-                {canLogResponse && <button type="button" onClick={() => navigate(`/feedback?eventId=${selectedEvent.id}`)}>Open feedback</button>}
-                <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Run reflection</button>
+                {canLogResponse && <button type="button" onClick={() => navigate(`/feedback?eventId=${selectedEvent.id}`)}>Open Audience Response</button>}
+                <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Debrief Audience Response</button>
               </div>
             </div>
           )}
@@ -4268,13 +6532,16 @@ function CalendarLedgerPage({ data, navigate }: { data: AppData; navigate: (path
   );
 }
 
-function FeedbackPage({ data, navigate, title = "Insights" }: { data: AppData; navigate: (path: string) => void; title?: string }) {
+function FeedbackPage({ data, navigate, title = "Audience" }: { data: AppData; navigate: (path: string) => void; title?: string }) {
   const [events, setEvents] = useState<PublishingEvent[]>([]);
   const [drafts, setDrafts] = useState<Draft[]>([]);
+  const [characterDetails, setCharacterDetails] = useState<CharacterDetail[]>([]);
   const [selectedEventId, setSelectedEventId] = useState(() => readFeedbackRouteState().eventId);
+  const [selectedFeedbackId, setSelectedFeedbackId] = useState("");
   const [latestFeedbackId, setLatestFeedbackId] = useState("");
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
+  const [actionPending, setActionPending] = useState<string | null>(null);
   const [feedbackForm, setFeedbackForm] = useState({
     impressions: "1200",
     reach: "900",
@@ -4288,42 +6555,119 @@ function FeedbackPage({ data, navigate, title = "Insights" }: { data: AppData; n
     topComments: "Consistent, useful, and visually clear.",
     operatorJudgment: "Repeat this direction with tighter variation."
   });
+  const characterIdsKey = data.characters.map((character) => character.id).sort().join(",");
+
+  async function loadAudienceData() {
+    const [eventResponse, draftResponse] = await Promise.all([
+      fetch(`${apiBaseUrl()}/api/publishing-events`),
+      fetch(`${apiBaseUrl()}/api/drafts`)
+    ]);
+    if (!eventResponse.ok || !draftResponse.ok) throw new Error("Unable to load Audience.");
+    const [eventPayload, draftPayload] = await Promise.all([
+      eventResponse.json() as Promise<{ events: PublishingEvent[] }>,
+      draftResponse.json() as Promise<{ drafts: Draft[] }>
+    ]);
+    const detailIds = Array.from(new Set([...data.characters.map((character) => character.id), ...draftPayload.drafts.map((draft) => draft.character_id)].filter(Boolean)));
+    const detailPayloads = await Promise.all(
+      detailIds.map(async (id) => {
+        const response = await fetch(`${apiBaseUrl()}/api/characters/${id}`);
+        if (!response.ok) throw new Error("Unable to load Audience talent details.");
+        return response.json() as Promise<{ character: CharacterDetail }>;
+      })
+    );
+    setEvents(eventPayload.events);
+    setDrafts(draftPayload.drafts);
+    setCharacterDetails(detailPayloads.map((payload) => payload.character));
+    const dueEvent =
+      eventPayload.events.find((event) => event.status === "needs_feedback") ??
+      eventPayload.events.find((event) => event.status === "published" || event.published_at) ??
+      eventPayload.events[0];
+    setSelectedEventId((current) => current || dueEvent?.id || "");
+  }
 
   useEffect(() => {
-    Promise.all([fetch(`${apiBaseUrl()}/api/publishing-events`), fetch(`${apiBaseUrl()}/api/drafts`)])
-      .then(async ([eventResponse, draftResponse]) => {
-        if (!eventResponse.ok || !draftResponse.ok) throw new Error("Unable to load feedback desk.");
-        const eventPayload = (await eventResponse.json()) as { events: PublishingEvent[] };
-        const draftPayload = (await draftResponse.json()) as { drafts: Draft[] };
-        return { events: eventPayload.events, drafts: draftPayload.drafts };
-      })
-      .then((payload) => {
-        setEvents(payload.events);
-        setDrafts(payload.drafts);
-        const dueEvent = payload.events.find((event) => event.status === "needs_feedback") ?? payload.events.find((event) => event.status === "published" || event.published_at) ?? payload.events[0];
+    let active = true;
+    async function load() {
+      try {
+        const [eventResponse, draftResponse] = await Promise.all([
+          fetch(`${apiBaseUrl()}/api/publishing-events`),
+          fetch(`${apiBaseUrl()}/api/drafts`)
+        ]);
+        if (!eventResponse.ok || !draftResponse.ok) throw new Error("Unable to load Audience.");
+        const [eventPayload, draftPayload] = await Promise.all([
+          eventResponse.json() as Promise<{ events: PublishingEvent[] }>,
+          draftResponse.json() as Promise<{ drafts: Draft[] }>
+        ]);
+        const detailIds = Array.from(new Set([...data.characters.map((character) => character.id), ...draftPayload.drafts.map((draft) => draft.character_id)].filter(Boolean)));
+        const detailPayloads = await Promise.all(
+          detailIds.map(async (id) => {
+            const response = await fetch(`${apiBaseUrl()}/api/characters/${id}`);
+            if (!response.ok) throw new Error("Unable to load Audience talent details.");
+            return response.json() as Promise<{ character: CharacterDetail }>;
+          })
+        );
+        if (!active) return;
+        setEvents(eventPayload.events);
+        setDrafts(draftPayload.drafts);
+        setCharacterDetails(detailPayloads.map((payload) => payload.character));
+        const dueEvent =
+          eventPayload.events.find((event) => event.status === "needs_feedback") ??
+          eventPayload.events.find((event) => event.status === "published" || event.published_at) ??
+          eventPayload.events[0];
         setSelectedEventId((current) => current || dueEvent?.id || "");
-      })
-      .catch((caught) => setError(caught instanceof Error ? caught.message : "Unable to load feedback desk."));
-  }, []);
+        setError(null);
+      } catch (caught) {
+        if (active) setError(caught instanceof Error ? caught.message : "Unable to load Audience.");
+      }
+    }
+    void load();
+    return () => {
+      active = false;
+    };
+  }, [characterIdsKey]);
 
   const updateFeedback = (key: keyof typeof feedbackForm, value: string) => setFeedbackForm({ ...feedbackForm, [key]: value });
+  const charactersById = useMemo(() => new Map(characterDetails.map((character) => [character.id, character])), [characterDetails]);
+  const audienceDebriefs = useMemo(() => buildAudienceDebriefModels(characterDetails), [characterDetails]);
+  const strategyBoard = useMemo(
+    () => buildStrategyBoardModel(characterDetails.length ? characterDetails : data.characters, data.runs),
+    [characterDetails, data.characters, data.runs]
+  );
   const feedbackEvents = events.filter((event) => event.status === "needs_feedback" || event.status === "published" || Boolean(event.published_at));
   const selectedEvent =
     feedbackEvents.find((event) => event.id === selectedEventId) ??
     events.find((event) => event.id === selectedEventId) ??
     feedbackEvents[0] ??
     null;
+  const selectedDebrief =
+    audienceDebriefs.find((debrief) => debrief.feedbackId === selectedFeedbackId) ??
+    audienceDebriefs.find((debrief) => debrief.technicalSource.publishingEventId === selectedEventId) ??
+    audienceDebriefs[0] ??
+    null;
   const selectedDraft = drafts.find((draft) => draft.id === selectedEvent?.draft_id) ?? null;
   const selectedVariant = selectedDraft?.variants?.find((variant) => variant.platform === selectedEvent?.platform) ?? selectedDraft?.variants?.[0] ?? null;
   const selectedAsset = selectedDraft?.asset ?? null;
-  const selectedCharacter = data.characters.find((character) => character.id === selectedDraft?.character_id) ?? null;
-  const metricTotal = selectedEvent
-    ? Number(feedbackForm.likes) + Number(feedbackForm.comments) + Number(feedbackForm.shares) + Number(feedbackForm.saves)
-    : 0;
+  const selectedCharacter =
+    (selectedDraft?.character_id ? charactersById.get(selectedDraft.character_id) : null) ??
+    data.characters.find((character) => character.id === selectedDraft?.character_id) ??
+    null;
+  const selectedDebriefHasReflection = Boolean(selectedDebrief?.technicalSource.reflectionId);
+  const debriefFeedbackId = latestFeedbackId || (!selectedDebriefHasReflection ? selectedDebrief?.feedbackId ?? "" : "");
+  const pendingCareerDirectionCount = characterDetails.reduce((count, character) => count + character.identityProposals.filter((proposal) => proposal.status === "proposed").length, 0);
+  const topStrategyTalent = strategyBoard.lanes.find((lane) => lane.talent.length)?.talent[0] ?? null;
 
   function chooseEvent(eventId: string) {
     setSelectedEventId(eventId);
-    replaceRouteQuery("/feedback", { eventId });
+    setSelectedFeedbackId("");
+    replaceRouteQuery("/insights", { eventId });
+  }
+
+  function chooseDebrief(debrief: AudienceDebriefModel) {
+    setSelectedFeedbackId(debrief.feedbackId);
+    if (debrief.technicalSource.publishingEventId) {
+      setSelectedEventId(debrief.technicalSource.publishingEventId);
+      replaceRouteQuery("/insights", { eventId: debrief.technicalSource.publishingEventId });
+    }
   }
 
   async function submitFeedback() {
@@ -4345,21 +6689,47 @@ function FeedbackPage({ data, navigate, title = "Insights" }: { data: AppData; n
         operatorJudgment: feedbackForm.operatorJudgment
       });
       setLatestFeedbackId(payload.feedback.id);
-      setMessage("Feedback logged. Reflection is ready.");
+      setSelectedFeedbackId(payload.feedback.id);
+      setMessage("Audience response logged. Review the debrief or run the career-direction pass.");
+      await loadAudienceData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to log feedback.");
     }
   }
 
   async function runReflection() {
-    if (!latestFeedbackId) return;
+    if (!debriefFeedbackId) return;
     setError(null);
     setMessage(null);
+    setActionPending(`reflection:${debriefFeedbackId}`);
     try {
-      const payload = await postJson<{ run: RunSummary }>(`/api/feedback/${latestFeedbackId}/reflection-run`, {});
-      navigate(`/runs/${payload.run.id}`);
+      await postJson<{ run: RunSummary; reflection: ReflectionEntry; proposals: IdentityProposal[] }>(`/api/feedback/${debriefFeedbackId}/reflection-run`, {});
+      setLatestFeedbackId("");
+      setSelectedFeedbackId(debriefFeedbackId);
+      setMessage("Audience debrief created. Career Direction proposals are ready for director review.");
+      await loadAudienceData();
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to run reflection.");
+    } finally {
+      setActionPending(null);
+    }
+  }
+
+  async function reviewAudienceProposal(proposal: IdentityProposal, status: "approved" | "rejected") {
+    setError(null);
+    setMessage(null);
+    setActionPending(`proposal:${proposal.id}:${status}`);
+    try {
+      await postJson(`/api/identity-proposals/${proposal.id}/review`, {
+        status,
+        constitutionChangeReason: proposal.kind === "constitution_patch" && status === "approved" ? "Approved from Audience Debrief." : undefined
+      });
+      setMessage(status === "approved" ? "Career direction approved." : "Audience signal ignored.");
+      await loadAudienceData();
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : "Unable to review career direction.");
+    } finally {
+      setActionPending(null);
     }
   }
 
@@ -4368,54 +6738,219 @@ function FeedbackPage({ data, navigate, title = "Insights" }: { data: AppData; n
       <header className="topbar page-heading">
         <div>
           <h1>{title}</h1>
+          <p>What did the public tell us about this talent?</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
       {error && <div className="notice error">{error}</div>}
       <StageHandoff data={data} stageId="feedback" navigate={navigate} />
-      <section className="feedback-command" aria-label="Feedback command">
+      <section className="feedback-command audience-command" aria-label="Audience command">
         <article>
-          <span>Response due</span>
-          <strong>{feedbackEvents.length}</strong>
-          <p>{selectedEvent ? `${platformLabel(selectedEvent.platform)} · ${selectedEvent.status.replaceAll("_", " ")}` : "No published event yet"}</p>
+          <span>Audience result</span>
+          <strong>{selectedDebrief?.result.label ?? "Unknown"}</strong>
+          <p>{selectedDebrief?.summary ?? "No audience response has been logged yet."}</p>
         </article>
         <article>
-          <span>Engagement</span>
-          <strong>{metricTotal}</strong>
-          <p>likes, comments, shares, saves</p>
+          <span>Career direction</span>
+          <strong>{pendingCareerDirectionCount}</strong>
+          <p>{pendingCareerDirectionCount === 1 ? "proposal waiting for director review" : "proposals waiting for director review"}</p>
         </article>
         <article>
-          <span>Identity loop</span>
-          <strong>{selectedCharacter ? displayModelName(selectedCharacter.name) : "Waiting"}</strong>
-          <p>{latestFeedbackId ? "Reflection ready" : "Log response first"}</p>
+          <span>Strategy board</span>
+          <strong>{topStrategyTalent?.displayName ?? "No leader"}</strong>
+          <p>{topStrategyTalent ? `${agencyPriorityLabel(topStrategyTalent.agencyPriority)} · ${topStrategyTalent.recommendedInvestment}` : "Publish and log response to rank talent."}</p>
         </article>
       </section>
-      <section className="feedback-workbench">
-        <article className="settings-preview feedback-queue">
-          <div className="section-heading"><h2>Published events</h2><span>{feedbackEvents.length}</span></div>
-          {feedbackEvents.length === 0 ? (
-            <EmptyState title="No published posts" body="Publish a draft from the Publishing Desk before logging feedback." />
+      <section className="feedback-workbench audience-workbench">
+        <aside className="audience-side-stack">
+          <article className="settings-preview feedback-queue audience-debrief-queue">
+            <div className="section-heading"><h2>Audience Debriefs</h2><span>{audienceDebriefs.length}</span></div>
+            {audienceDebriefs.length === 0 ? (
+              <EmptyState title="No debriefs yet" body="Log public response from a live placement to create the first Audience Debrief." />
+            ) : (
+              <div className="compact-list">
+                {audienceDebriefs.map((debrief) => (
+                  <button className={`run-row${selectedDebrief?.feedbackId === debrief.feedbackId ? " selected" : ""}`} key={debrief.feedbackId} type="button" onClick={() => chooseDebrief(debrief)}>
+                    <span>
+                      <strong>{debrief.talentName}</strong>
+                      <small>{debrief.platform} · {debrief.metrics.engagementRateLabel}</small>
+                    </span>
+                    <em className={`audience-result-pill ${debrief.result.id}`}>{debrief.result.label}</em>
+                  </button>
+                ))}
+              </div>
+            )}
+          </article>
+
+          <article className="settings-preview feedback-queue">
+            <div className="section-heading"><h2>Live Placements</h2><span>{feedbackEvents.length}</span></div>
+            {feedbackEvents.length === 0 ? (
+              <EmptyState title="No live placements" body="Mark a social package live from Publishing before logging audience response." />
+            ) : (
+              <div className="compact-list">
+                {feedbackEvents.map((event) => (
+                  <button className={`run-row${selectedEvent?.id === event.id ? " selected" : ""}`} key={event.id} type="button" onClick={() => chooseEvent(event.id)}>
+                    <span>
+                      <strong>{platformLabel(event.platform)} · {event.status.replaceAll("_", " ")}</strong>
+                      <small>{formatDate(event.published_at ?? event.created_at)}</small>
+                    </span>
+                    <em className={statusClass(event.status)}>{event.status.replaceAll("_", " ")}</em>
+                  </button>
+                ))}
+              </div>
+            )}
+          </article>
+        </aside>
+
+        <article className="settings-preview audience-debrief-panel">
+          <div className="section-heading">
+            <h2>Audience Debrief</h2>
+            <button type="button" onClick={runReflection} disabled={!debriefFeedbackId || actionPending === `reflection:${debriefFeedbackId}`}>
+              Debrief Audience Response
+            </button>
+          </div>
+          {!selectedDebrief ? (
+            <EmptyState title="No public response yet" body="Log audience response from a live placement to see what worked, what failed, and what should change next." />
           ) : (
-            <div className="compact-list">
-              {feedbackEvents.map((event) => (
-                <button className={`run-row${selectedEvent?.id === event.id ? " selected" : ""}`} key={event.id} type="button" onClick={() => chooseEvent(event.id)}>
-                  <span>
-                    <strong>{platformLabel(event.platform)} · {event.status.replaceAll("_", " ")}</strong>
-                    <small>{formatDate(event.published_at ?? event.created_at)}</small>
-                  </span>
-                  <em className={statusClass(event.status)}>{event.status.replaceAll("_", " ")}</em>
-                </button>
-              ))}
+            <div className="audience-debrief-body">
+              <div className="audience-result-card">
+                <span className={`audience-result-pill ${selectedDebrief.result.id}`}>{selectedDebrief.result.label}</span>
+                <div>
+                  <h2>{selectedDebrief.talentName}</h2>
+                  <p>{selectedDebrief.summary}</p>
+                </div>
+              </div>
+              <div className="audience-debrief-grid">
+                <section>
+                  <span>What worked</span>
+                  <ul>{selectedDebrief.whatWorked.map((item) => <li key={item}>{item}</li>)}</ul>
+                </section>
+                <section>
+                  <span>What failed</span>
+                  <ul>{selectedDebrief.whatFailed.map((item) => <li key={item}>{item}</li>)}</ul>
+                </section>
+                <section>
+                  <span>Comment themes</span>
+                  <ul>{selectedDebrief.commentThemes.map((item) => <li key={item}>{item}</li>)}</ul>
+                </section>
+                <section>
+                  <span>Recommended next test</span>
+                  <p>{selectedDebrief.recommendedNextTest}</p>
+                </section>
+              </div>
+              <section className="audience-career-direction">
+                <div>
+                  <span>Meaning for talent</span>
+                  <p>{selectedDebrief.meaningForTalent}</p>
+                </div>
+                <div>
+                  <span>Career Direction</span>
+                  <strong>{selectedDebrief.careerDirection.label}</strong>
+                  <p>{selectedDebrief.careerDirection.body}</p>
+                  <small>{selectedDebrief.careerDirection.rationale}</small>
+                </div>
+                {selectedDebrief.pendingProposals.length > 0 && (
+                  <div className="audience-proposal-actions">
+                    {selectedDebrief.pendingProposals.map((proposal) => (
+                      <div key={proposal.id}>
+                        <strong>{proposalDirectionLabel(proposal)}</strong>
+                        <p>{compactInlineText(proposal.body, 180)}</p>
+                        <div className="draft-primary-actions">
+                          <button
+                            className="primary-action"
+                            type="button"
+                            onClick={() => reviewAudienceProposal(proposal, "approved")}
+                            disabled={Boolean(actionPending)}
+                          >
+                            {proposalActionLabel(proposal)}
+                          </button>
+                          <button type="button" onClick={() => reviewAudienceProposal(proposal, "rejected")} disabled={Boolean(actionPending)}>
+                            Ignore Signal
+                          </button>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                )}
+              </section>
+              <details className="raw-details audience-metrics-detail">
+                <summary>Metrics detail</summary>
+                <dl className="metrics-detail-grid">
+                  <div><dt>Impressions</dt><dd>{selectedDebrief.metrics.impressions}</dd></div>
+                  <div><dt>Reach</dt><dd>{selectedDebrief.metrics.reach}</dd></div>
+                  <div><dt>Engagement</dt><dd>{selectedDebrief.metrics.engagement}</dd></div>
+                  <div><dt>Engagement rate</dt><dd>{selectedDebrief.metrics.engagementRateLabel}</dd></div>
+                  <div><dt>Likes</dt><dd>{selectedDebrief.metrics.likes}</dd></div>
+                  <div><dt>Comments</dt><dd>{selectedDebrief.metrics.comments}</dd></div>
+                  <div><dt>Shares</dt><dd>{selectedDebrief.metrics.shares}</dd></div>
+                  <div><dt>Saves</dt><dd>{selectedDebrief.metrics.saves}</dd></div>
+                  <div><dt>Profile visits</dt><dd>{selectedDebrief.metrics.profileVisits}</dd></div>
+                  <div><dt>Follows gained</dt><dd>{selectedDebrief.metrics.followsGained}</dd></div>
+                </dl>
+              </details>
+              <JsonDetails value={selectedDebrief.technicalAudit} />
             </div>
           )}
         </article>
-        <article className="settings-preview feedback-dossier">
-          <div className="section-heading"><h2>Response log</h2></div>
+      </section>
+
+      <section className="settings-preview audience-strategy-board">
+        <div className="section-heading">
+          <h2>Strategy / Star Board</h2>
+          <button type="button" onClick={() => navigate("/talent")}>Open Roster</button>
+        </div>
+        <div className="strategy-summary-grid">
+          <article><span>Represented talent</span><strong>{strategyBoard.summary.representedTalent}</strong></article>
+          <article><span>Push</span><strong>{strategyBoard.summary.pushCount}</strong></article>
+          <article><span>Development bets</span><strong>{strategyBoard.summary.developmentCount}</strong></article>
+          <article><span>At risk</span><strong>{strategyBoard.summary.riskCount}</strong></article>
+        </div>
+        <div className="strategy-lanes">
+          {strategyBoard.lanes.map((lane) => (
+            <article className={`strategy-lane ${lane.id}`} key={lane.id}>
+              <div className="strategy-lane-heading">
+                <span>{lane.label}</span>
+                <strong>{lane.talent.length}</strong>
+                <small>{lane.detail}</small>
+              </div>
+              {lane.talent.length === 0 ? (
+                <p className="strategy-empty">No talent in this lane.</p>
+              ) : (
+                lane.talent.map((talent) => (
+                  <div className="strategy-talent" key={talent.talentId}>
+                    <div>
+                      <strong>{talent.displayName}</strong>
+                      <em>{agencyPriorityLabel(talent.agencyPriority)}</em>
+                    </div>
+                    <p>{talent.recommendedInvestment}</p>
+                    <dl>
+                      <div><dt>Momentum</dt><dd>{talent.momentum}</dd></div>
+                      <div><dt>Audience pull</dt><dd>{talent.audiencePull}</dd></div>
+                      <div><dt>Identity strength</dt><dd>{talent.identityStrength}</dd></div>
+                      <div><dt>Platform fit</dt><dd>{talent.platformFit}</dd></div>
+                      <div><dt>Development risk</dt><dd>{talent.developmentRisk}</dd></div>
+                    </dl>
+                    <button type="button" onClick={() => navigate(`/characters/${talent.talentId}`)}>{talent.nextMove}</button>
+                  </div>
+                ))
+              )}
+            </article>
+          ))}
+        </div>
+        <details className="raw-details">
+          <summary>Strategy derivation</summary>
+          <pre>{JSON.stringify(strategyBoard.technicalAudit, null, 2)}</pre>
+        </details>
+      </section>
+
+      <section className="feedback-workbench audience-log-workbench">
+        <article className="settings-preview feedback-dossier audience-log-panel">
+          <div className="section-heading"><h2>Log New Response</h2></div>
           {!selectedEvent ? (
             <EmptyState title="No event selected" body="Open Publishing and mark a draft published first." />
           ) : (
             <div className="asset-detail">
-              {selectedAsset?.id && <img src={`${apiBaseUrl()}/api/assets/${selectedAsset.id}/file`} alt={selectedVariant?.alt_text ?? selectedDraft?.title ?? "Published asset"} />}
+              {selectedAsset?.id && <img src={`${apiBaseUrl()}/api/assets/${selectedAsset.id}/file`} alt={safeAssetAltText(selectedVariant?.alt_text, selectedDraft?.title ?? "Published asset")} />}
               <div className="score-row">
                 <span className={statusClass(selectedEvent.status)}>{selectedEvent.status.replaceAll("_", " ")}</span>
                 <span>{selectedCharacter ? displayModelName(selectedCharacter.name) : "Unknown character"}</span>
@@ -4434,12 +6969,12 @@ function FeedbackPage({ data, navigate, title = "Insights" }: { data: AppData; n
               <div className="form-stack">
                 <label>Qualitative notes<textarea value={feedbackForm.qualitativeNotes} onChange={(event) => updateFeedback("qualitativeNotes", event.target.value)} /></label>
                 <label>Top comments<textarea value={feedbackForm.topComments} onChange={(event) => updateFeedback("topComments", event.target.value)} /></label>
-                <label>Operator judgment<textarea value={feedbackForm.operatorJudgment} onChange={(event) => updateFeedback("operatorJudgment", event.target.value)} /></label>
+                <label>Director judgment<textarea value={feedbackForm.operatorJudgment} onChange={(event) => updateFeedback("operatorJudgment", event.target.value)} /></label>
               </div>
               <div className="draft-primary-actions">
-                <button className="primary-action" type="button" onClick={submitFeedback}>Log feedback</button>
-                <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Run reflection</button>
-                <button type="button" onClick={() => navigate(selectedCharacter ? `/characters/${selectedCharacter.id}` : "/talent")}>Talent proposals</button>
+                <button className="primary-action" type="button" onClick={submitFeedback}>Log Audience Response</button>
+                <button type="button" onClick={runReflection} disabled={!latestFeedbackId}>Debrief Audience Response</button>
+                <button type="button" onClick={() => navigate(selectedCharacter ? `/characters/${selectedCharacter.id}` : "/talent")}>Career Direction</button>
               </div>
             </div>
           )}
@@ -4464,53 +6999,59 @@ function PlaceholderPage({ title }: { title: string }) {
 
 const helpWorkflow = [
   {
-    label: "Studio",
+    label: "Director's Desk",
     path: "/",
     intent: "Start here when you are unsure what needs attention.",
-    operatorAction: "Check attention, running work, review-ready output, and blocked work."
+    operatorAction: "Check today's decisions, active production, review-ready work, and blocked studio jobs."
   },
   {
-    label: "Create",
+    label: "Scouting",
     path: "/create",
-    intent: "Start a character, campaign idea, asset, post package, or creative run.",
-    operatorAction: "Choose the kind of work to start before dropping into a detailed tool."
+    intent: "Scout New Faces and open new agency work.",
+    operatorAction: "Choose the kind of talent or work to start before dropping into a detailed tool."
   },
   {
-    label: "Review",
+    label: "Bookings",
+    path: "/prompt-studio",
+    intent: "Plan creative assignments for represented talent.",
+    operatorAction: "Propose booking ideas, create shoot briefs, and prepare creative treatments."
+  },
+  {
+    label: "Review Desk",
     path: "/review",
-    intent: "Judge generated output before it moves forward.",
-    operatorAction: "Approve, revise, or reject output that is waiting on a human."
+    intent: "Judge prepared work before it moves forward.",
+    operatorAction: "Approve, revise, or reject work that is waiting on director approval."
   },
   {
-    label: "Schedule",
+    label: "Publishing",
     path: "/calendar",
-    intent: "Plan publishing cadence and see scheduled content.",
-    operatorAction: "Inspect scheduled content, planned activity, and manual publishing state."
+    intent: "Plan placements and record what went live.",
+    operatorAction: "Inspect planned placements, packages, and manual publishing state."
   },
   {
-    label: "Library",
+    label: "Portfolio",
     path: "/library",
-    intent: "Find reusable source material and approved outputs.",
-    operatorAction: "Browse characters, assets, prompts, references, and production-ready material."
+    intent: "Find candidate shots, references, and approved work.",
+    operatorAction: "Browse talent, portfolio shots, references, and production-ready material."
   },
   {
-    label: "Talent",
+    label: "Roster",
     path: "/talent",
-    intent: "Manage characters and identity decisions.",
-    operatorAction: "Review talent setup, appearance, voice, canon, memory, and proposals."
+    intent: "Manage represented talent and identity decisions.",
+    operatorAction: "Review talent setup, appearance, voice, public story, lived experience, and proposals."
   },
   {
-    label: "Insights",
+    label: "Audience",
     path: "/insights",
-    intent: "Understand performance, learnings, feedback, and iteration history.",
-    operatorAction: "Log response, launch reflection, and inspect what the system learned."
+    intent: "Understand public response and iteration history.",
+    operatorAction: "Log audience response, launch audience debriefs, and inspect what the studio learned."
   }
 ];
 
 const helpSupport = [
-  ["Settings", "Configure System, Automation, Providers, and Debug tools."],
-  ["Talent detail pages", "Edit identity law, references, voice, memory, and proposals after entering Talent."],
-  ["Debug run detail", "Trace RunEvents, provider jobs, artifacts, decisions, and failures without changing publishing state."]
+  ["Studio Ops", "Configure provider routing, studio schedule, workflow engines, and production logs."],
+  ["Talent detail pages", "Edit identity bible, references, voice, lived experience, and proposals after entering Roster."],
+  ["Production Log detail", "Trace RunEvents, provider jobs, artifacts, decisions, and failures without changing publishing state."]
 ];
 
 function HelpPage({ navigate }: { navigate: (path: string) => void }) {
@@ -4518,9 +7059,9 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
     <>
       <header className="topbar page-heading">
         <div>
-          <p className="eyebrow">Operator guide</p>
+          <p className="eyebrow">Agency guide</p>
           <h1>How Virtual Agency Studio works</h1>
-          <p>VAS is a local-first studio for building AI influencer characters through observable, human-approved automation.</p>
+          <p>VAS is a local-first operating desk for scouting, developing, booking, reviewing, publishing, and evolving virtual talent.</p>
         </div>
       </header>
 
@@ -4530,44 +7071,44 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
             <span>Core idea</span>
             <h2>One character moves through a repeatable production cycle.</h2>
             <p>
-              The system is not a generic dashboard. It is an operator workflow for creating a character, producing assets,
-              reviewing outputs, publishing manually, logging feedback, and using that feedback to propose identity evolution.
+              The system is not a generic dashboard. It is an agency workflow for scouting talent, producing portfolio shots,
+              reviewing social packages, publishing manually, logging audience response, and using that response to propose career evolution.
             </p>
           </div>
           <div className="help-quick-start">
             <span>First session</span>
             <ol>
-              <li>Start in Create and choose the kind of work to begin.</li>
-              <li>Use Studio to see current activity and anything needing attention.</li>
-              <li>Use Review to approve, revise, or reject generated output.</li>
-              <li>Use Schedule to plan or record manual publishing.</li>
-              <li>Use Insights to log response and review what the system learned.</li>
+              <li>Start in Scouting when a new face or new agency work should begin.</li>
+              <li>Use Director's Desk to see current decisions and anything needing attention.</li>
+              <li>Use Review Desk to approve, revise, or reject prepared work.</li>
+              <li>Use Publishing to plan or record manual placements.</li>
+              <li>Use Audience to log response and review what the studio learned.</li>
             </ol>
           </div>
         </article>
 
-        <section className="help-principles" aria-label="System principles">
+        <section className="help-principles" aria-label="Agency principles">
           <article>
             <span>01</span>
-            <strong>Debug runs are the audit trail</strong>
-            <p>Every automated action should create readable RunEvents so an operator can inspect what happened and why.</p>
+            <strong>Production logs are the audit trail</strong>
+            <p>Every automated action should create readable RunEvents so the director can inspect what happened and why.</p>
           </article>
           <article>
             <span>02</span>
             <strong>Publication stays manual</strong>
-            <p>VAS prepares packages and ledger entries, but the human operator decides when and where something goes live.</p>
+            <p>VAS prepares packages and ledger entries, but the director decides when and where something goes live.</p>
           </article>
           <article>
             <span>03</span>
             <strong>Identity changes are gated</strong>
-            <p>Canon, memory, and Constitution changes are proposals until a human approves them.</p>
+            <p>Public story, lived experience, and Identity Bible changes are proposals until the director approves them.</p>
           </article>
         </section>
 
         <section className="help-workflow" aria-label="VAS workflow stages">
           <div className="section-heading">
             <span>Workflow</span>
-            <h2>The operator cycle</h2>
+            <h2>The agency cycle</h2>
           </div>
           <div className="help-stage-list">
             {helpWorkflow.map((stage, index) => (
@@ -4609,7 +7150,7 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
             <dl>
               <div>
                 <dt>Attention</dt>
-                <dd>Something needs an operator decision, usually a review gate, draft, asset, or feedback item.</dd>
+                <dd>Something needs a director decision, usually a review gate, social package, portfolio shot, or audience item.</dd>
               </div>
               <div>
                 <dt>Ready</dt>
@@ -4631,7 +7172,7 @@ function HelpPage({ navigate }: { navigate: (path: string) => void }) {
   );
 }
 
-function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
+function SettingsPage({ data, navigate }: { data: AppData; navigate: (path: string) => void }) {
   const [settings, setSettings] = useState<ProviderSettings | null>(null);
   const [savedSettings, setSavedSettings] = useState<ProviderSettings | null>(null);
   const [automationSettings, setAutomationSettings] = useState<AutomationSettings | null>(null);
@@ -4663,7 +7204,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     outputNodeIds: "",
     defaultForTiers: "sfw_standard"
   });
-  const [settingsView, setSettingsView] = useState<SettingsView>("workflows");
+  const [settingsView, setSettingsView] = useState<SettingsView>("overview");
   const [workflowEditorOpen, setWorkflowEditorOpen] = useState(false);
   const [message, setMessage] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -4926,28 +7467,15 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
   ].filter(Boolean).length;
   const imageProviderNeedsComfyWorkflow =
     !settings.mockProviders && settings.defaultImageGenerationProvider === "comfyui-cloud" && !settings.comfyuiCloudReady;
-  const opsCards = [
-    {
-      label: "Provider mode",
-      value: settings.mockProviders ? "Mock" : "Live",
-      detail: settings.mockProviders ? "Offline" : `${configuredProviderCount} keys`
-    },
-    {
-      label: "Scheduler",
-      value: automationStatus?.schedulerEnabled ? "On" : "Off",
-      detail: automationStatus?.nextRunAt ? formatDate(automationStatus.nextRunAt) : "Manual"
-    },
-    {
-      label: "Review gates",
-      value: automationStatus?.runsNeedingReview.length ?? 0,
-      detail: "Pending"
-    },
-    {
-      label: "Default output",
-      value: automationSettings.defaultImageProvider,
-      detail: `${automationSettings.maxImagesPerRun} image${automationSettings.maxImagesPerRun === 1 ? "" : "s"}`
-    }
-  ];
+  const studioOps = buildStudioOpsModel({
+    data,
+    settings,
+    automationSettings,
+    automationStatus,
+    workflows,
+    promptRecipes: manualRecipes,
+    assets: manualAssets
+  });
   const selectedDefaultCharacterNames = characters
     .filter((character) => selectedCharacters.has(character.id))
     .map((character) => displayModelName(character.name))
@@ -4957,36 +7485,17 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
   const characterManualAssets = manualAssets.filter((asset) => asset.character_id === manualCharacterId);
   const selectedManualRecipe = characterManualRecipes.find((recipe) => recipe.id === manualPromptRecipeId);
   const selectedManualAsset = characterManualAssets.find((asset) => asset.id === manualAssetId);
-  const packageAssetLabel = selectedManualAsset?.status === "candidate" ? "Approve + package" : "Package asset";
+  const packageAssetLabel = selectedManualAsset?.status === "candidate" ? "Approve + Create Package" : "Create Social Package";
   const recipeLabel = (recipe: PromptRecipe) => `${formatDate(recipe.created_at)} · ${compactInlineText(recipe.final_prompt, 54) || recipe.id.replace("prompt_recipe_", "recipe ")}`;
   const assetLabel = (asset: ImageAsset) => `${formatDate(asset.created_at)} · ${asset.status.replaceAll("_", " ")} · ${asset.provider ?? "local"}`;
   const activeWorkflow = workflows.find((workflow) => workflow.id === workflowForm.id);
-  const settingsTabs: Array<{ id: SettingsView; label: string; value: string | number; detail: string }> = [
-    {
-      id: "workflows",
-      label: "System",
-      value: workflows.length,
-      detail: activeWorkflow?.name ?? "Workflows"
-    },
-    {
-      id: "automation",
-      label: "Automation",
-      value: automationStatus?.schedulerEnabled ? "On" : "Off",
-      detail: `${automationStatus?.runsNeedingReview.length ?? 0} review`
-    },
-    {
-      id: "routing",
-      label: "Providers",
-      value: settings.mockProviders ? "Mock" : "Live",
-      detail: `${configuredProviderCount} key${configuredProviderCount === 1 ? "" : "s"}`
-    },
-    {
-      id: "manual",
-      label: "Debug",
-      value: characters.length,
-      detail: "Manual tools"
-    }
-  ];
+  const settingsTabs = studioOps.tabs.map((tab) => (
+    tab.id === "workflows" && activeWorkflow ? { ...tab, detail: activeWorkflow.name } : tab
+  ));
+  const recentProductionLogs = data.runs
+    .slice()
+    .sort((left, right) => new Date(right.updated_at).getTime() - new Date(left.updated_at).getTime())
+    .slice(0, 8);
 
   async function saveAutomation() {
     setError(null);
@@ -5014,7 +7523,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
         requireReviewBeforeDraft: automationSettings.requireReviewBeforeDraft,
         maxImagesPerRun: automationSettings.maxImagesPerRun
       });
-      setMessage("Daily Activity automation run created.");
+      setMessage("Today's booking work started.");
       navigate(`/runs/${payload.run.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to run daily automation.");
@@ -5027,7 +7536,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     setMessage(null);
     try {
       const payload = await postJson<{ run: RunSummary }>(`/api/automation/characters/${manualCharacterId}/activity-candidates`, {});
-      setMessage("Activity candidates generated.");
+      setMessage("Booking ideas proposed.");
       navigate(`/runs/${payload.run.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to generate activity candidates.");
@@ -5043,7 +7552,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
         count: automationSettings.maxImagesPerRun
       });
       const firstRunId = payload.results.find((result) => result.run)?.run.id;
-      setMessage("Image candidates generated.");
+      setMessage("Production candidates started.");
       if (firstRunId) navigate(`/runs/${firstRunId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to generate image candidates.");
@@ -5065,7 +7574,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
         promptSuffixes
       });
       const firstRunId = payload.results.find((result) => result.run)?.run.id;
-      setMessage("Identity angle candidates generated.");
+      setMessage("Identity-angle production candidates started.");
       if (firstRunId) navigate(`/runs/${firstRunId}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to generate identity angle candidates.");
@@ -5092,7 +7601,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     setMessage(null);
     try {
       const payload = await postJson<{ run: RunSummary }>(`/api/automation/assets/${manualAssetId.trim()}/package`, {});
-      setMessage("Draft package created.");
+      setMessage("Social package created.");
       navigate(`/runs/${payload.run.id}`);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : "Unable to package asset.");
@@ -5103,9 +7612,9 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
     <>
       <header className="topbar page-heading">
         <div>
-          <span className="eyebrow">Local controls</span>
-          <h1>Settings</h1>
-          <p>System, automation, providers, and debug tools.</p>
+          <span className="eyebrow">Studio operations</span>
+          <h1>Studio Ops</h1>
+          <p>Production logs, engines, studio schedule, routing, workflow engines, and technical audit tools.</p>
         </div>
       </header>
       {message && <div className="notice">{message}</div>}
@@ -5113,15 +7622,15 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       <section className="ops-console" aria-label="Local operating summary">
         <article className="ops-hero">
           <span>Studio operations</span>
-          <h2>{settings.mockProviders ? "Mock providers active" : "Live providers active"}</h2>
-          <p>Routing · gates · runs</p>
+          <h2>{studioOps.headline}</h2>
+          <p>{studioOps.primaryQuestion}</p>
           <div className="button-stack">
-            <button className="primary-action" type="button" onClick={() => navigate(runQuery("needs_review"))}>Open review gates</button>
-            <button type="button" onClick={() => navigate("/runs")}>Open debug runs</button>
+            <button className="primary-action" type="button" onClick={() => setSettingsView("logs")}>Open Production Logs</button>
+            <button type="button" onClick={() => navigate("/runs")}>Open Full Index</button>
           </div>
         </article>
         <div className="ops-stat-grid">
-          {opsCards.map((card) => (
+          {studioOps.overviewCards.map((card) => (
             <article key={card.label}>
               <span>{card.label}</span>
               <strong>{card.value}</strong>
@@ -5130,7 +7639,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
           ))}
         </div>
       </section>
-      <section className="settings-switcher" aria-label="Settings sections">
+      <section className="settings-switcher" aria-label="Studio Ops sections">
         {settingsTabs.map((tabItem) => (
           <button
             key={tabItem.id}
@@ -5144,10 +7653,74 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
           </button>
         ))}
       </section>
-      {settingsView === "routing" && (
+      {settingsView === "overview" && (
+        <section className="settings-grid settings-workbench studio-ops-overview">
+          <article className="settings-preview settings-primary-panel">
+            <div className="section-heading"><h2>Overview</h2><span>{data.health?.ok ? "Online" : "Check"}</span></div>
+            <dl>
+              <div><dt>API</dt><dd>{studioOps.technicalAudit.api.service} · {studioOps.technicalAudit.api.ok ? "online" : "offline"}</dd></div>
+              <div><dt>Local storage</dt><dd>{studioOps.technicalAudit.api.dataDir ?? "Not reported"}</dd></div>
+              <div><dt>Provider mode</dt><dd>{settings.mockProviders ? "Mock providers" : "Live provider routing"}</dd></div>
+              <div><dt>Recent failure</dt><dd>{studioOps.productionLogSummary.latestFailure ? studioOps.productionLogSummary.latestFailure.title : "None"}</dd></div>
+            </dl>
+          </article>
+          <article className="settings-preview ops-domain-panel">
+            <div className="section-heading"><h2>Technical Areas</h2></div>
+            <div className="ops-domain-grid">
+              {settingsTabs.filter((tab) => tab.id !== "overview").map((tab) => (
+                <button key={tab.id} type="button" onClick={() => setSettingsView(tab.id)}>
+                  <span>{tab.label}</span>
+                  <strong>{tab.value}</strong>
+                  <small>{tab.detail}</small>
+                </button>
+              ))}
+            </div>
+          </article>
+          <article className="settings-preview provider-readiness-panel">
+            <div className="section-heading"><h2>Provider Readiness</h2><span>{configuredProviderCount}</span></div>
+            <div className="compact-list">
+              {studioOps.providerReadiness.map((provider) => (
+                <div key={provider.label}>
+                  <strong>{provider.label}</strong>
+                  <small>{provider.status} · {provider.detail}</small>
+                </div>
+              ))}
+            </div>
+          </article>
+        </section>
+      )}
+      {settingsView === "logs" && (
+        <section className="settings-grid settings-workbench studio-ops-logs">
+          <article className="settings-preview settings-primary-panel">
+            <div className="section-heading"><h2>Production Logs</h2><span>{studioOps.productionLogSummary.total}</span></div>
+            <dl>
+              <div><dt>Active</dt><dd>{studioOps.productionLogSummary.active}</dd></div>
+              <div><dt>Review gates</dt><dd>{studioOps.productionLogSummary.review}</dd></div>
+              <div><dt>Failed</dt><dd>{studioOps.productionLogSummary.failed}</dd></div>
+              <div><dt>Full index</dt><dd><button type="button" onClick={() => navigate("/runs")}>Open Production Log Index</button></dd></div>
+            </dl>
+          </article>
+          <article className="settings-preview ops-log-ledger">
+            <div className="section-heading"><h2>Recent Logs</h2><button type="button" onClick={() => navigate("/runs")}>Open all</button></div>
+            {recentProductionLogs.length === 0 ? (
+              <EmptyState title="No production logs" body="Production logs will appear after studio work starts." />
+            ) : (
+              <div className="ops-log-table">
+                {recentProductionLogs.map((run) => (
+                  <button key={run.id} type="button" onClick={() => navigate(`/runs/${run.id}`)}>
+                    <span><strong>{run.title}</strong><small>{runTypeLabel(run.type)} · {formatDate(run.updated_at)}</small></span>
+                    <em className={statusClass(run.status)}>{statusLabel(run.status)}</em>
+                  </button>
+                ))}
+              </div>
+            )}
+          </article>
+        </section>
+      )}
+      {settingsView === "providers" && (
         <section className="settings-grid settings-workbench routing-workbench">
           <article className="settings-preview settings-primary-panel">
-            <div className="section-heading"><h2>Provider routing</h2><span>{routingDirty ? "Unsaved" : "Saved"}</span></div>
+            <div className="section-heading"><h2>Providers + Routing</h2><span>{routingDirty ? "Unsaved" : "Saved"}</span></div>
             <div className="form-stack">
               <label className="checkbox-row">
                 <input type="checkbox" checked={settings.mockProviders} onChange={(event) => update({ mockProviders: event.target.checked })} />
@@ -5173,13 +7746,13 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
               <div className="settings-action-grid">
                 <button className="primary-action" type="button" onClick={save} disabled={!routingDirty}>{routingDirty ? "Save routing" : "Routing saved"}</button>
                 <button type="button" onClick={resetRouting} disabled={!routingDirty}>Reset</button>
-                <button type="button" onClick={() => testProvider("image_generation")} disabled={routingDirty || imageProviderNeedsComfyWorkflow}>Test image</button>
-                <button type="button" onClick={() => testProvider("image_analysis")} disabled={routingDirty}>Test analysis</button>
+                <button type="button" onClick={() => testProvider("image_generation")} disabled={routingDirty || imageProviderNeedsComfyWorkflow}>Test Production</button>
+                <button type="button" onClick={() => testProvider("image_analysis")} disabled={routingDirty}>Test Quality Review</button>
               </div>
             </div>
           </article>
           <article className="settings-preview provider-matrix">
-            <div className="section-heading"><h2>Provider keys</h2><span>{configuredProviderCount}</span></div>
+            <div className="section-heading"><h2>Provider Settings</h2><span>{configuredProviderCount}</span></div>
             <details className="provider-drawer">
               <summary><span>Hermes</span><strong>{settings.hasHermesApiKey ? "Key saved" : "No key"}</strong></summary>
               <div className="form-stack">
@@ -5283,6 +7856,49 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
           </article>
         </section>
       )}
+      {settingsView === "audit" && (
+        <section className="settings-grid settings-workbench studio-ops-audit">
+          <article className="settings-preview settings-primary-panel">
+            <div className="section-heading"><h2>Technical Audit</h2><span>Raw state</span></div>
+            <dl>
+              <div><dt>API service</dt><dd>{studioOps.technicalAudit.api.service}</dd></div>
+              <div><dt>API version</dt><dd>{studioOps.technicalAudit.api.version ?? "Unknown"}</dd></div>
+              <div><dt>Local data directory</dt><dd>{studioOps.technicalAudit.api.dataDir ?? "Not reported"}</dd></div>
+              <div><dt>Production log IDs</dt><dd>{studioOps.technicalAudit.productionLogIds.length}</dd></div>
+              <div><dt>Workflow IDs</dt><dd>{studioOps.technicalAudit.workflowIds.length}</dd></div>
+            </dl>
+          </article>
+          <article className="settings-preview technical-audit-panel">
+            <div className="section-heading"><h2>IDs and Payload Snapshots</h2></div>
+            <div className="technical-audit-grid">
+              <section>
+                <span>Production Log IDs</span>
+                <pre>{JSON.stringify(studioOps.technicalAudit.productionLogIds, null, 2)}</pre>
+              </section>
+              <section>
+                <span>Workflow IDs</span>
+                <pre>{JSON.stringify(studioOps.technicalAudit.workflowIds, null, 2)}</pre>
+              </section>
+              <section>
+                <span>Prompt Recipe IDs</span>
+                <pre>{JSON.stringify(studioOps.technicalAudit.promptRecipeIds, null, 2)}</pre>
+              </section>
+              <section>
+                <span>Asset IDs</span>
+                <pre>{JSON.stringify(studioOps.technicalAudit.assetIds, null, 2)}</pre>
+              </section>
+              <section>
+                <span>Provider Settings Snapshot</span>
+                <pre>{JSON.stringify(settings, null, 2)}</pre>
+              </section>
+              <section>
+                <span>Automation Status Snapshot</span>
+                <pre>{JSON.stringify(automationStatus, null, 2)}</pre>
+              </section>
+            </div>
+          </article>
+        </section>
+      )}
       {settingsView === "automation" && (
         <section className="settings-grid settings-workbench automation-workbench">
           <article className="settings-preview settings-primary-panel">
@@ -5290,14 +7906,14 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
             <div className="form-stack">
               <label className="checkbox-row">
                 <input type="checkbox" checked={automationSettings.enableDailyActivityRuns} onChange={(event) => updateAutomation({ enableDailyActivityRuns: event.target.checked })} />
-                Daily runs
+                Daily booking work
               </label>
               <label>Time<input type="time" value={automationSettings.dailyRunTime} onChange={(event) => updateAutomation({ dailyRunTime: event.target.value })} /></label>
               <label>Platforms<input value={defaultPlatformsText} onChange={(event) => updateAutomation({ defaultPlatforms: event.target.value.split(",").map((item) => item.trim()).filter(Boolean) })} /></label>
               <div className="metric-grid">
                 <label>Image<select value={automationSettings.defaultImageProvider} onChange={(event) => updateAutomation({ defaultImageProvider: event.target.value })}><option value="mock">Mock</option><option value="openai">OpenAI</option><option value="hermes">Hermes</option><option value="comfyui-cloud">ComfyUI Cloud</option><option value="wavespeed">WaveSpeed AI</option></select></label>
                 <label>Analysis<select value={automationSettings.defaultAnalysisProvider} onChange={(event) => updateAutomation({ defaultAnalysisProvider: event.target.value })}><option value="mock">Mock</option><option value="hermes">Hermes</option></select></label>
-                <label>Images/run<input type="number" min="1" max="4" value={automationSettings.maxImagesPerRun} onChange={(event) => updateAutomation({ maxImagesPerRun: Number(event.target.value) })} /></label>
+                <label>Images/job<input type="number" min="1" max="4" value={automationSettings.maxImagesPerRun} onChange={(event) => updateAutomation({ maxImagesPerRun: Number(event.target.value) })} /></label>
               </div>
               <div className="settings-action-grid">
                 <button className="primary-action" type="button" onClick={saveAutomation} disabled={!automationDirty}>{automationDirty ? "Save automation" : "Automation saved"}</button>
@@ -5312,7 +7928,7 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
               <label className="checkbox-row"><input type="checkbox" checked={automationSettings.requireReviewBeforeDraft} onChange={(event) => updateAutomation({ requireReviewBeforeDraft: event.target.checked })} /> Review before draft</label>
             </div>
             <details className="editor-drawer">
-              <summary>Default characters</summary>
+              <summary>Default talent</summary>
               <div className="compact-list">
                 {characters.map((character) => (
                   <label className="checkbox-row" key={character.id}>
@@ -5338,43 +7954,43 @@ function SettingsPage({ navigate }: { navigate: (path: string) => void }) {
       {settingsView === "manual" && (
         <section className="settings-grid settings-workbench manual-workbench">
           <article className="settings-preview settings-primary-panel">
-            <div className="section-heading"><h2>Run command</h2></div>
+            <div className="section-heading"><h2>Production Console</h2></div>
             <div className="form-stack">
-              <label>Character<select value={manualCharacterId} onChange={(event) => setManualCharacterId(event.target.value)}>{characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
+              <label>Talent<select value={manualCharacterId} onChange={(event) => setManualCharacterId(event.target.value)}>{characters.map((character) => <option key={character.id} value={character.id}>{displayModelName(character.name)}</option>)}</select></label>
               <dl>
                 <div><dt>Mode</dt><dd>{selectedManualCharacter?.status ?? "No character"}</dd></div>
-                <div><dt>Recipes</dt><dd>{characterManualRecipes.length}</dd></div>
-                <div><dt>Assets</dt><dd>{characterManualAssets.length}</dd></div>
+                <div><dt>Treatments</dt><dd>{characterManualRecipes.length}</dd></div>
+                <div><dt>Shots</dt><dd>{characterManualAssets.length}</dd></div>
               </dl>
               <div className="settings-action-grid manual-actions">
-              <button className="primary-action" type="button" onClick={runDailyNow} disabled={!manualCharacterId}>Daily run</button>
-                <button type="button" onClick={generateActivityCandidates} disabled={!manualCharacterId}>Activities</button>
-                <button type="button" onClick={analyzeLatestCandidates} disabled={!manualCharacterId}>Analyze</button>
+              <button className="primary-action" type="button" onClick={runDailyNow} disabled={!manualCharacterId}>Book Today's Work</button>
+                <button type="button" onClick={generateActivityCandidates} disabled={!manualCharacterId}>Propose Booking Ideas</button>
+                <button type="button" onClick={analyzeLatestCandidates} disabled={!manualCharacterId}>Review Quality</button>
               </div>
             </div>
           </article>
           <article className="settings-preview">
-            <div className="section-heading"><h2>Targeted runs</h2></div>
+            <div className="section-heading"><h2>Targeted Production</h2></div>
             <div className="form-stack">
-              <label>Recipe
+              <label>Creative treatment
                 <select value={manualPromptRecipeId} onChange={(event) => setManualPromptRecipeId(event.target.value)} disabled={characterManualRecipes.length === 0}>
-                  {characterManualRecipes.length === 0 ? <option value="">No recipes</option> : characterManualRecipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipeLabel(recipe)}</option>)}
+                  {characterManualRecipes.length === 0 ? <option value="">No treatments</option> : characterManualRecipes.map((recipe) => <option key={recipe.id} value={recipe.id}>{recipeLabel(recipe)}</option>)}
                 </select>
               </label>
               <div className="compact-dossier">
-                <span>{selectedManualRecipe?.id.replace("prompt_recipe_", "Recipe ") ?? "No recipe selected"}</span>
-                <p>{selectedManualRecipe?.final_prompt?.slice(0, 150) ?? "Compose in Prompt Studio."}</p>
+                <span>{selectedManualRecipe?.id.replace("prompt_recipe_", "Treatment ") ?? "No treatment selected"}</span>
+                <p>{selectedManualRecipe?.final_prompt?.slice(0, 150) ?? "Prepare in Booking Desk."}</p>
               </div>
-              <button type="button" onClick={generateImageCandidates} disabled={!manualPromptRecipeId.trim()}>Generate images</button>
-              <button type="button" onClick={generateIdentityAngleBatch} disabled={!manualPromptRecipeId.trim()}>Generate identity angles</button>
-              <label>Asset
+              <button type="button" onClick={generateImageCandidates} disabled={!manualPromptRecipeId.trim()}>Start Production</button>
+              <button type="button" onClick={generateIdentityAngleBatch} disabled={!manualPromptRecipeId.trim()}>Produce Identity Angles</button>
+              <label>Portfolio shot
                 <select value={manualAssetId} onChange={(event) => setManualAssetId(event.target.value)} disabled={characterManualAssets.length === 0}>
-                  {characterManualAssets.length === 0 ? <option value="">No assets</option> : characterManualAssets.map((asset) => <option key={asset.id} value={asset.id}>{assetLabel(asset)}</option>)}
+                  {characterManualAssets.length === 0 ? <option value="">No shots</option> : characterManualAssets.map((asset) => <option key={asset.id} value={asset.id}>{assetLabel(asset)}</option>)}
                 </select>
               </label>
               <div className="compact-dossier">
-                <span>{selectedManualAsset?.id.replace("asset_", "Asset ") ?? "No asset selected"}</span>
-                <p>{selectedManualAsset ? `${selectedManualAsset.status.replaceAll("_", " ")} · ${formatBytes(selectedManualAsset.size_bytes)} · ${selectedManualAsset.latestAnalysis?.recommended_action ?? "No review signal"}` : "Generate or approve an asset first."}</p>
+                <span>{selectedManualAsset?.id.replace("asset_", "Shot ") ?? "No shot selected"}</span>
+                <p>{selectedManualAsset ? `${selectedManualAsset.status.replaceAll("_", " ")} · ${formatBytes(selectedManualAsset.size_bytes)} · ${selectedManualAsset.latestAnalysis?.recommended_action ?? "No review signal"}` : "Produce or approve a portfolio shot first."}</p>
               </div>
               <button type="button" onClick={packageAsset} disabled={!manualAssetId.trim()}>{packageAssetLabel}</button>
               <details className="raw-details">
@@ -5425,7 +8041,7 @@ export function App() {
       return <CharacterProfilePage characterId={characterDetailMatch[1]} data={data} navigate={navigate} />;
     }
     if (path === "/settings") {
-      return <SettingsPage navigate={navigate} />;
+      return <SettingsPage data={data} navigate={navigate} />;
     }
     if (path === "/prompt-studio") {
       return <PromptStudioPage data={data} navigate={navigate} />;
@@ -5440,7 +8056,7 @@ export function App() {
       return <CalendarLedgerPage data={data} navigate={navigate} />;
     }
     if (path === "/feedback") {
-      return <FeedbackPage data={data} navigate={navigate} title="Feedback" />;
+      return <FeedbackPage data={data} navigate={navigate} title="Audience" />;
     }
     if (path === "/insights") {
       return <FeedbackPage data={data} navigate={navigate} />;
